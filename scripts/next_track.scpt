@@ -1,0 +1,1 @@
+on is_running(appName)	tell application "System Events" to (name of processes) contains appNameend is_runningset spotRunning to is_running("Spotify")if spotRunning then	tell application "Spotify" to next track	set ctrack to "{\"ok\": true}"else	set ctrack to "{\"ok\": false, \"error\": \"spotify not running\"}"end if
