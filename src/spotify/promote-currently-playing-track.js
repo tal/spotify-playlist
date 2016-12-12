@@ -37,6 +37,8 @@ export async function promoteCurrentlyPlayingTrack() {
 }
 
 export async function removeCurrentlyPlayingTrack() {
+  runScript('next_track')
+
   const track = await runScript('get_track')
   const inboxPlaylist = await getKey('inboxPlaylist')
 
@@ -44,7 +46,6 @@ export async function removeCurrentlyPlayingTrack() {
 
   console.log(`Removing '${track.name} - ${track.artist}' (${track.uri}) from ${playlist.name}`)
 
-  runScript('next_track')
   const username = await getKey('username')
   const spotifyAPI = await getAPI()
   await spotifyAPI.removeTracksFromPlaylist(username, playlist.id, [{uri: track.uri}])

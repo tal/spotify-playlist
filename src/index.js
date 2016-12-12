@@ -11,12 +11,10 @@ import { moveTracksFromPlaylistToPlaylist } from './spotify/playlists'
 let promise
 
 switch (process.argv[2]) {
+  case 'promote-skip':
+    runScript('next_track')
   case 'promote':
     promise = promoteCurrentlyPlayingTrack()
-    break
-  case 'promote-skip':
-    promise = promoteCurrentlyPlayingTrack()
-    promise.then(() => runScript('next_track'))
     break
   case 'remove':
     promise = removeCurrentlyPlayingTrack()
