@@ -37,9 +37,10 @@ export async function promoteCurrentlyPlayingTrack() {
 }
 
 export async function removeCurrentlyPlayingTrack() {
+  const track = await runScript('get_track')
+
   runScript('next_track')
 
-  const track = await runScript('get_track')
   const inboxPlaylist = await getKey('inboxPlaylist')
 
   const playlist = await getPlaylistByName(inboxPlaylist)
