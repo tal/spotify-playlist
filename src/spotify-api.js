@@ -42,7 +42,7 @@ const SCOPES = [
   'playlist-read-collaborative',
   'playlist-modify-public',
   'playlist-modify-private',
-  // 'streaming',
+  'streaming',
   'user-follow-modify',
   'user-follow-read',
   'user-library-modify',
@@ -51,6 +51,7 @@ const SCOPES = [
   'user-read-email',
   'user-top-read',
   'user-library-read',
+  'user-read-recently-played',
 ]
 
 export function getAuthUrl() {
