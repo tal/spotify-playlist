@@ -1,5 +1,7 @@
 // @flow
 
+import Promise from 'bluebird'
+
 import { getAPI } from '../spotify-api'
 import { getKey } from '../db'
 
@@ -55,6 +57,7 @@ function playlistNameForDate(added_at) {
 
 type MoveTrack = {
   trackId: string,
+  track: any,
   targetPlaylistName: string,
   soucePlaylistId: string,
 }
@@ -64,7 +67,7 @@ async function createPlaylist(name, options = {public: true}) {
   const username = await getKey('username')
 
   const playlist = await spotifyAPI.createPlaylist(username, name, options)
-  
+
   if (playlists) {
     playlists.unshift(playlist)
   }
@@ -88,6 +91,7 @@ async function tracksToArchive(): MoveTrack[] {
 
     return {
       trackId: track.id,
+      track,
       diff: Math.floor(diff / 1000 / 60 / 60 / 24),
       targetPlaylistName: playlistNameForDate(added_at),
       sourcePlaylistId: currentPlaylist.id,
@@ -119,7 +123,9 @@ class TrackMoveSet {
       throw 'locked cannot proceed'
     }
 
-    const { 
+    console.log(`moving ${item.track.name} - ${item.track.uri}`)
+
+    const {
       targetPlaylistName,
       trackId,
       sourcePlaylistId,
@@ -198,7 +204,7 @@ class TrackMoveSet {
 
     return Promise.all(promises)
   }
-  
+
 }
 
 export async function moveTracksFromPlaylistToPlaylist() {
