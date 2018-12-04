@@ -1,0 +1,19 @@
+{
+  "name": "spotify-thing",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "@types/aws-sdk": "^2.7.0",
+    "@types/node": "^10.12.12",
+    "lambda-local": "^1.5.1",
+    "prettier": "^1.15.3",
+    "ts-node": "^7.0.1",
+    "typescript": "^3.1.6"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.369.0",
+    "decko": "^1.2.0"
+  }
+}
