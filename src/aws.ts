@@ -1,27 +1,42 @@
 import AWS from 'aws-sdk'
-import { memoize } from 'decko'
+import { getEnv } from './env'
 
-AWS.config.update({
-  region: 'us-west-2',
-  accessKeyId: 'fakeMyKeyId',
-  secretAccessKey: 'fakeSecretAccessKey',
+const env = getEnv().then(env => {
+  AWS.config.update({
+    region: 'us-west-2',
+    ...env.aws,
+  })
 })
 
 class AWSInstanceManager {
   constructor(private endpoint: string) {}
 
-  @memoize
+  private _dynamo?: Promise<AWS.DynamoDB>
   get dynamo() {
-    return new AWS.DynamoDB({
-      endpoint: this.endpoint,
-    })
+    if (!this._dynamo) {
+      this._dynamo = env.then(
+        () =>
+          new AWS.DynamoDB({
+            endpoint: this.endpoint,
+          }),
+      )
+    }
+
+    return this._dynamo
   }
 
-  @memoize
+  private _docs?: Promise<AWS.DynamoDB.DocumentClient>
   get docs() {
-    return new AWS.DynamoDB.DocumentClient({
-      endpoint: this.endpoint,
-    })
+    if (!this._docs) {
+      this._docs = env.then(
+        () =>
+          new AWS.DynamoDB.DocumentClient({
+            endpoint: this.endpoint,
+          }),
+      )
+    }
+
+    return this._docs
   }
 }
 

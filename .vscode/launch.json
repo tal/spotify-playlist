@@ -5,11 +5,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch index.ts",
       "type": "node",
       "request": "launch",
-      "runtimeArgs": ["-r", "ts-node/register"],
-      "args": ["${workspaceFolder}/src/index.ts"]
+      "name": "Launch Program",
+      "preLaunchTask": "build ts",
+      "envFile": "${workspaceFolder}/.env",
+      "args": ["${workspaceFolder}/dist/index.js"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Test Publish",
+      // "preLaunchTask": "build ts",
+      "envFile": "${workspaceFolder}/.env",
+      "args": ["${workspaceFolder}/scripts/publish-test.js"]
     }
   ]
 }
