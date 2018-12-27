@@ -2,10 +2,7 @@ import AWS from 'aws-sdk'
 import { getEnv } from './env'
 
 const env = getEnv().then(env => {
-  AWS.config.update({
-    region: 'us-west-2',
-    ...env.aws,
-  })
+  AWS.config.update(env.aws)
 })
 
 class AWSInstanceManager {

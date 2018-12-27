@@ -1,7 +1,8 @@
-declare type ActionTypes = 'promote-track'
+declare type ActionTypes = 'promote-track' | 'demote-track' | 'archive'
 
 declare interface ActionHistoryItemData {
   id: string
+  created_at: number
   action: ActionTypes
 }
 
@@ -14,6 +15,6 @@ declare interface TrackData {
 }
 
 declare interface PromoteActionHistoryItemData extends ActionHistoryItemData {
-  action: 'promote-track'
+  action: 'promote-track' | 'demote-track'
   item?: TrackData
 }

@@ -1,7 +1,7 @@
 import { Spotify } from '../spotify'
 
 import { Playlist, PlayBackContext } from 'spotify-web-api-node'
-import { settings as getSettings } from '..'
+import { settings as getSettings } from '../settings'
 
 interface TriageWorkflowSettings {
   inbox: string
