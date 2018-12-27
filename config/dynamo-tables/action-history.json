@@ -1,15 +1,23 @@
 {
-  "TableName": "actionHistory",
+  "TableName": "action_history",
   "KeySchema": [
     {
       "AttributeName": "id",
       "KeyType": "HASH"
+    },
+    {
+      "AttributeName": "created_at",
+      "KeyType": "RANGE"
     }
   ],
   "AttributeDefinitions": [
     {
       "AttributeName": "id",
       "AttributeType": "S"
+    },
+    {
+      "AttributeName": "created_at",
+      "AttributeType": "N"
     }
   ],
   "ProvisionedThroughput": {

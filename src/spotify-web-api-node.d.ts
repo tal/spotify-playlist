@@ -10,7 +10,7 @@ declare module 'spotify-web-api-node' {
   interface User extends Entity {
     id: string
     display_name: string
-    email: string
+    email?: string
     uri: string
     type: 'user'
   }
@@ -140,8 +140,16 @@ declare module 'spotify-web-api-node' {
     type: 'playlist' | 'artist' | 'album'
   }
 
+  export interface PlaylistTrack {
+    added_at: string
+    is_local: boolean
+    primary_color?: string
+    added_by: User
+    track: Track
+  }
+
   type PlaylistsListResponse = PagingObject<Playlist>
-  type PlaylistTrackListResponse = PagingObject<Track>
+  type PlaylistTrackListResponse = PagingObject<PlaylistTrack>
 
   interface SpotifyWebApiConfig {
     accessToken?: string
@@ -291,6 +299,22 @@ declare module 'spotify-web-api-node' {
      *          about the track. Not returned if a callback is given.
      */
     getTrack(trackId: string): Promise<SpotifyResponse<Track>>
+
+    /**
+     * Create a playlist.
+     * @param {string} userId The playlist's owner's user ID.
+     * @param {string} playlistName The name of the playlist.
+     * @param {Object} [options] The possible options, currently only public.
+     * @param {requestCallback} [callback] Optional callback method to be called instead of the promise.
+     * @example createPlaylist('thelinmichael', 'My cool playlist!', { public : false }).then(...)
+     * @returns {Promise|undefined} A promise that if successful, resolves to an object containing information about the
+     *          created playlist. If rejected, it contains an error object. Not returned if a callback is given.
+     */
+    createPlaylist(
+      userId: string,
+      playlist: string,
+      options?: { description?: string; public?: boolean },
+    ): Promise<SpotifyResponse<Playlist>>
   }
 }
 

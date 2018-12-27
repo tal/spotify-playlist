@@ -6,6 +6,7 @@ interface Env {
     clientSecret: string
   }
   aws: {
+    region: string
     accessKeyId: string
     secretAccessKey: string
   }
@@ -13,17 +14,19 @@ interface Env {
 
 const kms = new AWS.KMS()
 
-async function getKey(key: string) {
+type Encoding = 'none' | 'encrypted'
+
+async function getKey(key: string, encoding: Encoding) {
   const val = process.env[key]
 
   if (!val) throw `couldn't get required env var ${key}`
 
-  if (process.env['NODE_ENV'] === 'dev') {
+  if (encoding === 'none' || dev.isDev) {
     return val
   }
 
   const data = await kms
-    .decrypt({ CiphertextBlob: new Buffer(val, 'base65') })
+    .decrypt({ CiphertextBlob: new Buffer(val, 'base64') })
     .promise()
 
   return (data.Plaintext as Buffer).toString('ascii')
@@ -34,10 +37,11 @@ let env: Env | null = null
 export async function getEnv(): Promise<Env> {
   if (env) return env
 
-  const spotifyClientId = getKey('SPOTIFY_CLIENT_ID')
-  const spotifyClientSecret = getKey('SPOTIFY_CLIENT_SECRET')
-  const awsAccessKeyId = getKey('AWS_ACCESS_KEY_ID')
-  const awsSecretAccessKey = getKey('AWS_SECRET_ACCESS_KEY')
+  const spotifyClientId = getKey('SPOTIFY_CLIENT_ID', 'none')
+  const spotifyClientSecret = getKey('SPOTIFY_CLIENT_SECRET', 'none')
+  const awsAccessKeyId = getKey('AWS_ACCESS_KEY_ID', 'none')
+  const awsSecretAccessKey = getKey('AWS_SECRET_ACCESS_KEY', 'none')
+  const awsRegion = getKey('AWS_REGION', 'none')
 
   env = {
     spotify: {
@@ -47,6 +51,7 @@ export async function getEnv(): Promise<Env> {
     aws: {
       accessKeyId: await awsAccessKeyId,
       secretAccessKey: await awsSecretAccessKey,
+      region: await awsRegion,
     },
   }
 
