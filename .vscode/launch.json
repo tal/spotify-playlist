@@ -7,22 +7,20 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Launch Program",
-      // "preLaunchTask": "build ts",
-      "envFile": "${workspaceFolder}/.env",
-      "env": {"NODE_ENV": "dev"},
-      "args": ["${workspaceFolder}/dist/index.js"],
-      "sourceMaps": true
-    },
-    {
-      "type": "node",
-      "request": "launch",
       "name": "Test Publish",
       // "preLaunchTask": "build ts",
       "envFile": "${workspaceFolder}/.env",
-      "env": {"NODE_ENV": "dev"},
-      "args": ["${workspaceFolder}/scripts/publish-test.js", "promotes"],
+      "env": {
+        "NODE_ENV": "dev"
+      },
+      "args": ["${workspaceFolder}/scripts/publish-test.js", "${input:action}"],
       "sourceMaps": true
     }
-  ]
+  ],
+  "inputs": [{
+    "id": "action",
+    "description": "Action to run",
+    "type": "pickString",
+    "options": ["archive", "promotes", "demotes", "instant"]
+  }]
 }
