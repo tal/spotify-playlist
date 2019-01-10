@@ -72,6 +72,11 @@ export const handler: APIGatewayProxyHandler = async ev => {
 
   let action: Action | Action[]
   switch (actionName) {
+    case 'user':
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ user: u }),
+      }
     case 'archive':
       const archive = new ArchiveAction(spotify)
       action = archive

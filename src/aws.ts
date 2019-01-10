@@ -6,7 +6,7 @@ const env = getEnv().then(env => {
 })
 
 class AWSInstanceManager {
-  constructor(private endpoint: string) {}
+  constructor(private endpoint?: string) {}
 
   private _dynamo?: Promise<AWS.DynamoDB>
   get dynamo() {
@@ -37,6 +37,8 @@ class AWSInstanceManager {
   }
 }
 
-const instance = new AWSInstanceManager('http://localhost:8000')
+const instance = new AWSInstanceManager(
+  dev.isDev ? 'http://localhost:8000' : undefined,
+)
 
 export { instance as AWS }
