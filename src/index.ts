@@ -52,7 +52,7 @@ export const instant: APIGatewayProxyHandler = async ev => {
   }
 }
 
-export const handler: APIGatewayProxyHandler = async ev => {
+export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   let actionName: string
   if (ev.pathParameters && ev.pathParameters['action']) {
     actionName = ev.pathParameters['action']
@@ -65,6 +65,10 @@ export const handler: APIGatewayProxyHandler = async ev => {
         error: 'no action name given',
       }),
     }
+  }
+
+  if (actionName === 'instant') {
+    return (instant as any)(ev, ctx)
   }
 
   const u = await document<UserData>('user', { id: 'koalemos' })
