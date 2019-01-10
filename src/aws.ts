@@ -1,39 +1,17 @@
 import AWS from 'aws-sdk'
-import { getEnv } from './env'
-
-const env = getEnv().then(env => {
-  AWS.config.update(env.aws)
-})
 
 class AWSInstanceManager {
-  constructor(private endpoint?: string) {}
+  public dynamo: AWS.DynamoDB
+  public docs: AWS.DynamoDB.DocumentClient
 
-  private _dynamo?: Promise<AWS.DynamoDB>
-  get dynamo() {
-    if (!this._dynamo) {
-      this._dynamo = env.then(
-        () =>
-          new AWS.DynamoDB({
-            endpoint: this.endpoint,
-          }),
-      )
-    }
+  constructor(endpoint?: string) {
+    this.dynamo = new AWS.DynamoDB({
+      endpoint,
+    })
 
-    return this._dynamo
-  }
-
-  private _docs?: Promise<AWS.DynamoDB.DocumentClient>
-  get docs() {
-    if (!this._docs) {
-      this._docs = env.then(
-        () =>
-          new AWS.DynamoDB.DocumentClient({
-            endpoint: this.endpoint,
-          }),
-      )
-    }
-
-    return this._docs
+    this.docs = new AWS.DynamoDB.DocumentClient({
+      endpoint,
+    })
   }
 }
 
