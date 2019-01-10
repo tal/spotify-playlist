@@ -8,6 +8,7 @@ import { AfterTrackActionAction } from './actions/track-action'
 import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
+import { getEnv } from './env'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -72,6 +73,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   }
 
   const u = await document<UserData>('user', { id: 'koalemos' })
+
   const spotify = await Spotify.get(u)
 
   let action: Action | Action[]
