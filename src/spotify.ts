@@ -1,10 +1,4 @@
-import SpotifyWebApi, {
-  Playlist,
-  PlayBackContext,
-  Track,
-  PlaylistTrack,
-  User,
-} from 'spotify-web-api-node'
+import SpotifyWebApi, { Track, PlaylistTrack, User } from 'spotify-web-api-node'
 import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
 import * as HttpManager from 'spotify-web-api-node/src/http-manager'
 import { updateAccessToken } from './db/update'
@@ -15,6 +9,64 @@ function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
 
 function hasURI(obj: { id: string } | { uri: string }): obj is { uri: string } {
   return 'uri' in obj
+}
+
+function asyncMemoize<T>(
+  target: T,
+  propertyKey: string,
+  descriptor: PropertyDescriptor,
+) {
+  const { value, get } = descriptor
+
+  const memkey = `__mem_${propertyKey}`
+
+  if (typeof value === 'function') {
+    descriptor.value = function(this: any, ...args: any[]) {
+      if (this[memkey]) {
+        console.log(`👯‍♀️ Cached ${propertyKey}`)
+        return this[memkey]
+      }
+
+      console.log(`🔈 Executing ${propertyKey}`)
+
+      const promise = value.apply(this, args)
+
+      promise.then(() => console.log(`📥 Returned ${propertyKey}`))
+      promise.catch((error: any) =>
+        console.error(`🧨 Error in ${propertyKey}`, error),
+      )
+
+      this[memkey] = promise
+
+      return promise
+    }
+
+    descriptor.value.reset = function() {
+      this[memkey] = null
+    }
+  }
+
+  if (typeof get === 'function') {
+    descriptor.get = function(this: any) {
+      if (this[memkey]) {
+        console.log(`👯‍♀️ Cached ${propertyKey}`)
+        return this[memkey]
+      }
+
+      console.log(`🔈 Executing ${propertyKey}`)
+
+      const promise = get.call(this)
+
+      promise.then(() => console.log(`📥 Returned ${propertyKey}`))
+      promise.catch((error: any) =>
+        console.error(`🧨 Error in ${propertyKey}`, error),
+      )
+
+      this[memkey] = promise
+
+      return promise
+    }
+  }
 }
 
 function logError<T>(
@@ -62,8 +114,6 @@ function logError<T>(
       }
     }
   }
-
-  // throw `Cannot log ${propertyKey} because it's an unsupported type`
 }
 
 export interface SpotifyPesonalCreds {
@@ -76,8 +126,6 @@ export type TrackForMove = { uri: string; type?: 'track'; id?: string }
 export type PlaylistID = { id: string; type?: 'playlist' }
 
 import { getEnv } from './env'
-import { type } from 'os'
-import { put } from './db/put'
 
 const env = getEnv().then(env => env.spotify)
 
@@ -137,13 +185,8 @@ export class Spotify {
     return me.body.id
   }
 
-  private _allPlaylists?: Playlist[]
-  @logError
+  @asyncMemoize
   async allPlaylists() {
-    if (this._allPlaylists) {
-      return this._allPlaylists
-    }
-
     const client = this.client
 
     let response = await client.getUserPlaylists({ limit: 50 })
@@ -157,8 +200,6 @@ export class Spotify {
 
       items = [...items, ...response.body.items]
     }
-
-    this._allPlaylists = items
 
     return items
   }
@@ -182,12 +223,7 @@ export class Spotify {
   @logError
   private async createPlaylist(named: string) {
     const result = await this.client.createPlaylist(await this.myID(), named)
-
-    if (this._allPlaylists) {
-      this._allPlaylists.push(result.body)
-    } else {
-      throw 'cannot create a playlist if you havent first tried to find all them'
-    }
+    ;(this.allPlaylists as any).reset()
 
     return result.body
   }
@@ -249,23 +285,11 @@ export class Spotify {
     }
   }
 
-  private _player?: Promise<PlayBackContext>
-  @logError
+  @asyncMemoize
   get player() {
-    if (this._player) {
-      return this._player
-    }
-
     const player = Promise.resolve(this.client)
       .then(client => client.getMyCurrentPlaybackState())
-      // .then(resp => {
-      //   console.log('state', resp)
-      //   return resp
-      // })
       .then(({ body }) => body)
-
-    setTimeout(() => (this._player = undefined), 10 * 1000)
-    this._player = player
 
     return player
   }
@@ -279,6 +303,17 @@ export class Spotify {
       ) {
         return player.item
       }
+    })
+  }
+
+  get currentlyPlayingPlaylist() {
+    return this.player.then(async player => {
+      if (!player.context) return
+      if (player.context.type !== 'playlist') return
+
+      const { uri } = player.context
+      const playlists = await this.allPlaylists()
+      return playlists.find(playlist => playlist.uri === uri)
     })
   }
 
@@ -315,8 +350,8 @@ export class Spotify {
 
   @logError
   async addTrackToPlaylist(
-    track: TrackForMove,
     { id: playlistId }: PlaylistID,
+    ...tracks: TrackForMove[]
   ): Promise<{ snapshot_id: string } | undefined> {
     if (dev.drySpotify) {
       console.log('add track to playlist')
@@ -324,20 +359,29 @@ export class Spotify {
     }
 
     // Warning the track in playlist cache could cause issues if you try to add the same track multiple times
-    if (track.id) {
-      const trackInPlaylist = await this.trackInPlaylist(
-        { id: track.id },
-        { id: playlistId },
-      )
-      if (trackInPlaylist) return
+    const tracksToAdd: TrackForMove[] = []
+    for (let track of tracks) {
+      const trackInPlaylist = await this.trackInPlaylist(track, {
+        id: playlistId,
+      })
+
+      if (!trackInPlaylist) {
+        tracksToAdd.push(track)
+      }
     }
+
+    if (tracksToAdd.length === 0) {
+      return
+    }
+
+    const uris = tracksToAdd.map(tr => tr.uri)
 
     const client = this.client
     const response = await WebApiRequest.builder(client.getAccessToken())
       .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
       .withHeaders({ 'Content-Type': 'application/json' })
       .withBodyParameters({
-        uris: [track.uri],
+        uris,
       })
       .build()
       .execute(HttpManager.post)
@@ -347,20 +391,24 @@ export class Spotify {
 
   @logError
   async removeTrackFromPlaylist(
-    track: TrackForMove,
     { id: playlistId }: PlaylistID,
+    ...tracksData: TrackForMove[]
   ) {
     if (dev.drySpotify) {
       console.log('remove track from playlist')
       return Promise.resolve({})
     }
 
+    const tracks: { uri: string }[] = tracksData.map(({ uri }) => {
+      return { uri }
+    })
+
     const client = this.client
     const response = await WebApiRequest.builder(client.getAccessToken())
       .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
       .withHeaders({ 'Content-Type': 'application/json' })
       .withBodyParameters({
-        tracks: [{ uri: track.uri }],
+        tracks,
       })
       .build()
       .execute(HttpManager.del)
@@ -368,13 +416,13 @@ export class Spotify {
     return response.body
   }
 
-  async moveCurrentTrack(
-    track: TrackForMove,
+  async moveTracks(
     from: PlaylistID,
     to: PlaylistID,
+    ...tracks: TrackForMove[]
   ) {
-    const remP = this.removeTrackFromPlaylist(track, from)
-    const addP = this.addTrackToPlaylist(track, to)
+    const remP = this.removeTrackFromPlaylist(from, ...tracks)
+    const addP = this.addTrackToPlaylist(to, ...tracks)
 
     await remP
     await addP
@@ -386,6 +434,30 @@ export class Spotify {
     const resp = await client.getTrack(id)
 
     return resp.body
+  }
+
+  private _savedTracks?: Track[]
+  @logError
+  async mySavedTracks() {
+    if (this._savedTracks) {
+      return this._savedTracks
+    }
+
+    let response = await this.client.getMySavedTracks({ limit: 50 })
+    let items = response.body.items.map(st => st.track)
+
+    while (response.body.next) {
+      response = await this.client.getMySavedTracks({
+        limit: response.body.limit,
+        offset: response.body.limit + response.body.offset,
+      })
+
+      items = [...items, ...response.body.items.map(st => st.track)]
+    }
+
+    this._savedTracks = items
+
+    return items
   }
 
   @logError

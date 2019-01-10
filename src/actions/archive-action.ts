@@ -1,5 +1,5 @@
 import { Action } from './action'
-import { Spotify } from '../spotify'
+import { Spotify, TrackForMove } from '../spotify'
 import {
   MoveMutationData,
   MoveTrackMutation,
@@ -38,6 +38,8 @@ export class ArchiveAction implements Action {
     const tracks = await client.tracksForPlaylist(currentPlaylist)
     const mutations: MoveTrackMutation[] = []
 
+    const foo: { [k: string]: TrackForMove[] } = {}
+
     for (let track of tracks) {
       const addedAt = new Date(track.added_at).getTime()
       const timeSinceAdded = now - addedAt
@@ -47,14 +49,24 @@ export class ArchiveAction implements Action {
           targetPlaylistName,
         )
 
-        const mutation = new MoveTrackMutation({
-          track: track.track,
-          from: currentPlaylist,
-          to: targetPlaylist,
-        })
+        if (!foo[targetPlaylist.id]) {
+          foo[targetPlaylist.id] = []
+        }
 
-        mutations.push(mutation)
+        foo[targetPlaylist.id].push(track.track)
       }
+    }
+
+    for (let playlistID in foo) {
+      const tracks = foo[playlistID]
+
+      mutations.push(
+        new MoveTrackMutation({
+          tracks,
+          from: currentPlaylist,
+          to: { id: playlistID },
+        }),
+      )
     }
 
     const mutationPromises = mutations.map(m => m.run(this.client))

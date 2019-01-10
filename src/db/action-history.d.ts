@@ -1,4 +1,8 @@
-declare type ActionTypes = 'promote-track' | 'demote-track' | 'archive'
+declare type ActionTypes =
+  | 'promote-track'
+  | 'demote-track'
+  | 'archive'
+  | 'auto-artist-playlist'
 
 declare interface ActionHistoryItemData {
   id: string

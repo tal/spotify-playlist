@@ -26,6 +26,6 @@ export class RemoveTrackMutation extends Mutation<RemoveTrackMoveMutationData> {
 
   protected async mutate(client: Spotify) {
     const { track, playlist } = this.data
-    await client.removeTrackFromPlaylist(track, playlist)
+    await client.removeTrackFromPlaylist(playlist, track)
   }
 }

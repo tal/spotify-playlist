@@ -25,7 +25,7 @@ function shouldThrottle(
 
 type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
 
-export async function performAction<T>(
+async function performAction<T>(
   action: Action,
 ): Promise<Result<T, PerformActionReason>> {
   // const shouldAct = action.shouldAct()
@@ -56,4 +56,22 @@ export async function performAction<T>(
   await put('action_history', data)
 
   return { reason: 'success' }
+}
+
+export async function performActions<T>(
+  action: Action | Action[],
+): Promise<Result<T, PerformActionReason>[]> {
+  let actions: Action[]
+  if (action instanceof Array) {
+    actions = action
+  } else {
+    actions = [action]
+  }
+
+  const results: Result<T, PerformActionReason>[] = []
+  for (let action of actions) {
+    results.push(await performAction(action))
+  }
+
+  return results
 }

@@ -11,3 +11,8 @@ global.dev = {
     process.env['DRY_SPOTIFY'] === '1' ||
     process.env['DRY_SPOTIFY'] === 'true',
 }
+
+global.seconds = 1000
+global.minutes = 1000 * 60
+global.hours = 1000 * 60 * 60
+global.days = 1000 * 60 * 60 * 24

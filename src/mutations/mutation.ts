@@ -4,7 +4,7 @@ export type CompletionStates = 'pending' | 'running' | 'success' | 'error'
 
 export type MutationTypes =
   | 'move-track'
-  | 'add-track'
+  | 'add-tracks'
   | 'remove-track'
   | 'save-track'
   | 'unsave-track'
