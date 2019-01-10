@@ -1,3 +1,4 @@
 dynamodb_local_latest/
 dist/
 .env
+index.zip
