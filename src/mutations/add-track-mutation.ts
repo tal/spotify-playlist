@@ -2,21 +2,21 @@ import { Mutation, MutationTypes } from './mutation'
 import { TrackForMove, PlaylistID, Spotify } from '../spotify'
 
 export interface AddTrackMoveMutationData {
-  track: TrackForMove
+  tracks: TrackForMove[]
   playlist: PlaylistID
 }
 
 type D = AddTrackMoveMutationData
 
 export class AddTrackMutation extends Mutation<AddTrackMoveMutationData> {
-  mutationType: MutationTypes = 'add-track'
+  mutationType: MutationTypes = 'add-tracks'
 
-  transformData({ track, playlist }: D): D {
+  transformData({ tracks, playlist }: D): D {
     return {
-      track: {
+      tracks: tracks.map(track => ({
         uri: track.uri,
         id: track.id,
-      },
+      })),
       playlist: {
         id: playlist.id,
       },
@@ -24,7 +24,7 @@ export class AddTrackMutation extends Mutation<AddTrackMoveMutationData> {
   }
 
   protected async mutate(client: Spotify) {
-    const { track, playlist } = this.data
-    await client.addTrackToPlaylist(track, playlist)
+    const { tracks, playlist } = this.data
+    await client.addTrackToPlaylist(playlist, ...tracks)
   }
 }

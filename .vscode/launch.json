@@ -8,9 +8,11 @@
       "type": "node",
       "request": "launch",
       "name": "Launch Program",
-      "preLaunchTask": "build ts",
+      // "preLaunchTask": "build ts",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["${workspaceFolder}/dist/index.js"]
+      "env": {"NODE_ENV": "dev"},
+      "args": ["${workspaceFolder}/dist/index.js"],
+      "sourceMaps": true
     },
     {
       "type": "node",
@@ -18,7 +20,9 @@
       "name": "Test Publish",
       // "preLaunchTask": "build ts",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["${workspaceFolder}/scripts/publish-test.js"]
+      "env": {"NODE_ENV": "dev"},
+      "args": ["${workspaceFolder}/scripts/publish-test.js", "promotes"],
+      "sourceMaps": true
     }
   ]
 }

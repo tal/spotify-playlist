@@ -186,17 +186,17 @@ export abstract class TrackAction implements Action {
 
     if (currentState.current !== promotedState.current) {
       if (promotedState.current) {
-        promises.push(client.addTrackToPlaylist(currentTrack, current))
+        promises.push(client.addTrackToPlaylist(current, currentTrack))
       } else {
-        promises.push(client.removeTrackFromPlaylist(currentTrack, current))
+        promises.push(client.removeTrackFromPlaylist(current, currentTrack))
       }
     }
 
     if (currentState.inbox !== promotedState.inbox) {
       if (promotedState.inbox) {
-        promises.push(client.addTrackToPlaylist(currentTrack, inbox))
+        promises.push(client.addTrackToPlaylist(inbox, currentTrack))
       } else {
-        promises.push(client.removeTrackFromPlaylist(currentTrack, inbox))
+        promises.push(client.removeTrackFromPlaylist(inbox, currentTrack))
       }
     }
 
@@ -217,17 +217,26 @@ export abstract class TrackAction implements Action {
     if (!currentTrack) throw 'no track provided 3'
 
     const { inbox, current } = await getTriageInfo(client)
+    const currentlyPlayingPlaylistP = client.currentlyPlayingPlaylist
 
-    const trackInInbox = client.trackInPlaylist(currentTrack, inbox)
-    const trackInCurrent = client.trackInPlaylist(currentTrack, current)
-    const trackIsSaved = client.trackIsSaved(currentTrack)
+    const promises: Promise<any>[] = []
 
-    if (await trackInCurrent) {
-      await client.moveCurrentTrack(currentTrack, current, inbox)
-    } else if ((await trackInInbox) && (await trackIsSaved)) {
-      await client.unsaveTrack(currentTrack.id)
-    } else {
-      throw 'cannot undo if track isnt in current or saved in the inbox'
+    promises.push(client.removeTrackFromPlaylist(current, currentTrack))
+    promises.push(client.removeTrackFromPlaylist(inbox, currentTrack))
+
+    const currentlyPlayingPlaylist = await currentlyPlayingPlaylistP
+    if (
+      currentlyPlayingPlaylist &&
+      currentlyPlayingPlaylist.id !== current.id &&
+      currentlyPlayingPlaylist.id !== inbox.id
+    ) {
+      promises.push(
+        client.removeTrackFromPlaylist(currentlyPlayingPlaylist, currentTrack),
+      )
     }
+
+    promises.push(client.unsaveTrack(currentTrack.id))
+
+    await Promise.all(promises)
   }
 }

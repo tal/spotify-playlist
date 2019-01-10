@@ -34,14 +34,14 @@ export async function settings() {
     return {
       inbox: 'Inbox Test',
       current: 'Current Test',
-      timeToArchive: 1 * 24 * 60 * 60 * 1000,
+      timeToArchive: 1 * days,
       archivePlaylistNameFor: buildMyFn('[Test]'),
     }
   } else {
     return {
       inbox: 'Inbox',
       current: 'Current',
-      timeToArchive: 30 * 24 * 60 * 60 * 1000,
+      timeToArchive: 30 * days,
       archivePlaylistNameFor: buildMyFn(),
     }
   }

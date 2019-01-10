@@ -121,6 +121,11 @@ declare module 'spotify-web-api-node' {
     type: 'track'
   }
 
+  export interface SavedTrack {
+    added_at: string
+    track: Track
+  }
+
   export interface PlayBackContext {
     timestamp: number
     device: Device
@@ -150,6 +155,7 @@ declare module 'spotify-web-api-node' {
 
   type PlaylistsListResponse = PagingObject<Playlist>
   type PlaylistTrackListResponse = PagingObject<PlaylistTrack>
+  type SavedTracksListResponse = PagingObject<SavedTrack>
 
   interface SpotifyWebApiConfig {
     accessToken?: string
@@ -315,6 +321,18 @@ declare module 'spotify-web-api-node' {
       playlist: string,
       options?: { description?: string; public?: boolean },
     ): Promise<SpotifyResponse<Playlist>>
+
+    /**
+     * Retrieve the tracks that are saved to the authenticated users Your Music library.
+     * @param {Object} [options] Options, being market, limit, and/or offset.
+     * @param {requestCallback} [callback] Optional callback method to be called instead of the promise.
+     * @returns {Promise|undefined} A promise that if successful, resolves to an object containing a paging object which in turn contains
+     *          playlist track objects. Not returned if a callback is given.
+     */
+    getMySavedTracks(options: {
+      limit?: number
+      offset?: number
+    }): Promise<SpotifyResponse<SavedTracksListResponse>>
   }
 }
 

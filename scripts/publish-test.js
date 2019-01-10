@@ -50,27 +50,90 @@ var jsonPayload = {
   "resource": "/{proxy+}",
   "httpMethod": "GET",
   "queryStringParameters": {
-    "and-skip": "true"
   },
   "stageVariables": {
     "stageVarName": "stageVarValue"
   }
 }
 
+const options = {
+  archive: {
+    pathParameters: {
+      action: 'archive',
+    },
+    queryStringParameters: {},
+  },
+  promote: {
+    pathParameters: {
+      action: 'promote',
+    },
+  },
+  promotes: {
+    pathParameters: {
+      action: 'promote',
+    },
+    queryStringParameters: {
+      "and-skip": "true",
+    },
+  },
+  demote: {
+    pathParameters: {
+      action: 'demote',
+    },
+  },
+  demotes: {
+    pathParameters: {
+      action: 'demote',
+    },
+    queryStringParameters: {
+      "and-skip": "true",
+    },
+  },
+  'neo-tribal': {
+    pathParameters: {
+      action: 'handle-playlist',
+    },
+    queryStringParameters: {
+      'playlist-name': 'Neo Tribal [A]',
+    },
+  },
+  instant: {},
+}
+
+let action = process.argv.pop()
+
+if (!action || action.match(/\/.+\.[tj]s/)) {
+  action = 'instant'
+}
+
+if (!(action in options)) {
+  throw `"${action}" cannot be run`
+}
+
+const event = {
+  ...jsonPayload,
+  ...options[action],
+}
 
 async function main() {
   const done = await lambdaLocal.execute({
-    event: jsonPayload,
+    event,
     lambdaPath: path.join(__dirname, '../dist/index.js'),
     profilePath: '~/.aws/credentials',
     profileName: 'default',
-    timeoutMs: 15000,
     verboseLevel: 3,
+    timeoutMs: 150000,
     envfile: path.join(__dirname, '../.env'),
-    lambdaHandler: 'archive'
+    lambdaHandler: action === 'instant' ? 'instant' : 'handler',
   })
 
-  console.log(done)
+  return done
 }
 
-main()
+main().then(done =>{
+    const {body} = done
+    const data = JSON.parse(body)
+    console.log(body)
+  }).catch(err =>
+    console.error('error', err)
+  )
