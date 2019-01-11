@@ -16,3 +16,6 @@ global.seconds = 1000
 global.minutes = 1000 * 60
 global.hours = 1000 * 60 * 60
 global.days = 1000 * 60 * 60 * 24
+
+const AWSXRay = require('aws-xray-sdk')
+AWSXRay.captureHTTPsGlobal(require('http'))

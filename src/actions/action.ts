@@ -1,4 +1,5 @@
 import { document, getActionHistory } from '../db/document'
+import AWSXRay from 'aws-xray-sdk-core'
 import { put } from '../db/put'
 
 export interface Action {
@@ -28,13 +29,7 @@ type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
 async function performAction<T>(
   action: Action,
 ): Promise<Result<T, PerformActionReason>> {
-  // const shouldAct = action.shouldAct()
   const id = action.getID()
-  // if (!(await shouldAct)) {
-  //   return {
-  //     reason: 'shouldnt-act',
-  //   }
-  // }
 
   const { idThrottleMs } = action
 
@@ -50,7 +45,18 @@ async function performAction<T>(
     }
   }
 
-  await action.perform()
+  const subsegment = AWSXRay.getSegment().addNewSubsegment('performing action')
+  subsegment.addAnnotation('Action ID', await id)
+
+  try {
+    await action.perform()
+  } catch (e) {
+    subsegment.addError(e)
+    throw e
+  } finally {
+    subsegment.close()
+  }
+
   const data = await action.forStorage()
 
   await put('action_history', data)
