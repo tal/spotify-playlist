@@ -54,12 +54,14 @@ export const instant: APIGatewayProxyHandler = async ev => {
 }
 
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
-  let actionName: string
+  let actionName: string | null = null
   if (ev.pathParameters && ev.pathParameters['action']) {
     actionName = ev.pathParameters['action']
   } else if (ev.queryStringParameters && ev.queryStringParameters['action']) {
     actionName = ev.queryStringParameters['action']
-  } else {
+  }
+
+  if (!actionName) {
     return {
       statusCode: 404,
       body: JSON.stringify({
