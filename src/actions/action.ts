@@ -1,5 +1,4 @@
 import { document, getActionHistory } from '../db/document'
-import AWSXRay from 'aws-xray-sdk-core'
 import { put } from '../db/put'
 
 export interface Action {
@@ -45,17 +44,7 @@ async function performAction<T>(
     }
   }
 
-  const subsegment = AWSXRay.getSegment().addNewSubsegment('performing action')
-  subsegment.addAnnotation('Action ID', await id)
-
-  try {
-    await action.perform()
-  } catch (e) {
-    subsegment.addError(e)
-    throw e
-  } finally {
-    subsegment.close()
-  }
+  await action.perform()
 
   const data = await action.forStorage()
 
