@@ -13,7 +13,7 @@
       "env": {
         "NODE_ENV": "dev"
       },
-      "args": ["${workspaceFolder}/scripts/publish-test.js", "${input:action}"],
+      "args": ["${workspaceFolder}/dist/cli.js", "${input:action}"],
       "sourceMaps": true
     }
   ],
@@ -21,6 +21,6 @@
     "id": "action",
     "description": "Action to run",
     "type": "pickString",
-    "options": ["archive", "promotes", "demotes", "instant"]
+    "options": ["archive", "promote", "demote", "instant"]
   }]
 }

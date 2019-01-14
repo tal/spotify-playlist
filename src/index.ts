@@ -8,7 +8,6 @@ import { AfterTrackActionAction } from './actions/track-action'
 import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
-import { getEnv } from './env'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -42,6 +41,7 @@ function doAfterCurrentTrack(client: Spotify, ev: APIGatewayProxyEvent) {
 export const instant: APIGatewayProxyHandler = async ev => {
   const { queryStringParameters, pathParameters, path } = ev
 
+  throw 'omg'
   return {
     statusCode: 200,
     body: JSON.stringify({

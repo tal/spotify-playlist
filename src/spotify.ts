@@ -2,7 +2,6 @@ import SpotifyWebApi, { Track, PlaylistTrack, User } from 'spotify-web-api-node'
 import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
 import * as HttpManager from 'spotify-web-api-node/src/http-manager'
 import { updateAccessToken } from './db/update'
-import AWSXRay from 'aws-xray-sdk-core'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
   return 'id' in obj
@@ -444,30 +443,21 @@ export class Spotify {
       return this._savedTracks
     }
 
-    const subsegment = AWSXRay.getSegment().addNewSubsegment('Get Saved Tracks')
+    let response = await this.client.getMySavedTracks({ limit: 50 })
+    let items = response.body.items.map(st => st.track)
 
-    try {
-      let response = await this.client.getMySavedTracks({ limit: 50 })
-      let items = response.body.items.map(st => st.track)
+    while (response.body.next) {
+      response = await this.client.getMySavedTracks({
+        limit: response.body.limit,
+        offset: response.body.limit + response.body.offset,
+      })
 
-      while (response.body.next) {
-        response = await this.client.getMySavedTracks({
-          limit: response.body.limit,
-          offset: response.body.limit + response.body.offset,
-        })
-
-        items = [...items, ...response.body.items.map(st => st.track)]
-      }
-
-      this._savedTracks = items
-
-      return items
-    } catch (err) {
-      subsegment.addError(err)
-      throw err
-    } finally {
-      subsegment.close()
+      items = [...items, ...response.body.items.map(st => st.track)]
     }
+
+    this._savedTracks = items
+
+    return items
   }
 
   @logError
