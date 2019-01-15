@@ -8,6 +8,7 @@ declare interface ActionHistoryItemData {
   id: string
   created_at: number
   action: ActionTypes
+  ttl?: number
 }
 
 declare interface TrackData {

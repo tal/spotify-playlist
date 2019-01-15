@@ -11,16 +11,24 @@
       // "preLaunchTask": "build ts",
       "envFile": "${workspaceFolder}/.env",
       "env": {
-        "NODE_ENV": "dev"
+        "NODE_ENV": "${input:env}"
       },
       "args": ["${workspaceFolder}/dist/cli.js", "${input:action}"],
       "sourceMaps": true
     }
   ],
-  "inputs": [{
-    "id": "action",
-    "description": "Action to run",
-    "type": "pickString",
-    "options": ["archive", "promote", "demote", "instant"]
-  }]
+  "inputs": [
+    {
+      "id": "action",
+      "description": "Action to run",
+      "type": "pickString",
+      "options": ["archive", "promote", "demote", "instant"]
+    },
+    {
+      "id": "env",
+      "description": "dev or prod",
+      "type": "pickString",
+      "options": ["dev", "prod"]
+    }
+  ]
 }
