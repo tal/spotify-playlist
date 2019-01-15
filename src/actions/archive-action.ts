@@ -7,7 +7,7 @@ import {
 import { settings } from '../settings'
 
 export class ArchiveAction implements Action {
-  idThrottleMs = 30 * 1000
+  // idThrottleMs = 30 * 1000
   public created_at: number
 
   constructor(private client: Spotify) {
@@ -21,11 +21,16 @@ export class ArchiveAction implements Action {
   private mutationData: MoveMutationData[] = []
 
   async forStorage() {
+    const ttl = this.mutationData.length
+      ? undefined
+      : Math.floor((this.created_at + 2 * days) / 1000)
+
     return {
       id: await this.getID(),
       created_at: this.created_at,
       action: 'archive' as ActionTypes,
       mutations: this.mutationData,
+      ttl,
     }
   }
 
