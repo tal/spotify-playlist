@@ -1,5 +1,4 @@
-import { document, getActionHistory } from '../db/document'
-import { put } from '../db/put'
+import { Dynamo } from '../db/dynamo'
 
 export interface Action {
   forStorage: () => Promise<ActionHistoryItemData>
@@ -8,24 +7,10 @@ export interface Action {
   idThrottleMs?: number
 }
 
-function shouldThrottle(
-  { idThrottleMs }: { idThrottleMs: number },
-  history?: ActionHistoryItemData,
-): boolean {
-  if (history) {
-    const expirationDate = history.created_at + idThrottleMs
-    const now = new Date().getTime()
-    if (now < expirationDate) {
-      return true
-    }
-  }
-
-  return false
-}
-
 type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
 
 async function performAction<T>(
+  dynamo: Dynamo,
   action: Action,
 ): Promise<Result<T, PerformActionReason>> {
   const id = action.getID()
@@ -35,7 +20,7 @@ async function performAction<T>(
   if (idThrottleMs) {
     const now = new Date().getTime()
     const since = now - idThrottleMs
-    const history = await getActionHistory(await id, since)
+    const history = await dynamo.getActionHistory(await id, since)
 
     if (history) {
       return {
@@ -48,12 +33,13 @@ async function performAction<T>(
 
   const data = await action.forStorage()
 
-  await put('action_history', data)
+  await dynamo.putActionHistory(data)
 
   return { reason: 'success' }
 }
 
 export async function performActions<T>(
+  dynamo: Dynamo,
   action: Action | Action[],
 ): Promise<Result<T, PerformActionReason>[]> {
   let actions: Action[]
@@ -65,7 +51,7 @@ export async function performActions<T>(
 
   const results: Result<T, PerformActionReason>[] = []
   for (let action of actions) {
-    results.push(await performAction(action))
+    results.push(await performAction(dynamo, action))
   }
 
   return results

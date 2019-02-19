@@ -1,13 +1,19 @@
 require('./-run-this-first')
 import { Spotify } from './spotify'
-import { document } from './db/document'
-import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
+import {
+  APIGatewayProxyHandler,
+  APIGatewayProxyEvent,
+  Handler,
+  APIGatewayProxyResult,
+} from 'aws-lambda'
 import { MagicPromoteAction } from './actions/magic-promote-action'
 import { performActions, Action } from './actions/action'
 import { AfterTrackActionAction } from './actions/track-action'
 import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
+import { AlexaEventHandler } from './alexa-lambda'
+import { getDynamo } from './db/dynamo'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -53,6 +59,13 @@ export const instant: APIGatewayProxyHandler = async ev => {
   }
 }
 
+export const alexa: AlexaEventHandler = async (ev, ctx) => {
+  const { request } = ev
+  if (request.type === 'IntentRequest') {
+    request.intent.confirmationStatus
+  }
+}
+
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   let actionName: string | null = null
   if (ev.pathParameters && ev.pathParameters['action']) {
@@ -74,7 +87,9 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     return (instant as any)(ev, ctx)
   }
 
-  const u = await document<UserData>('user', { id: 'koalemos' })
+  const u = await getDynamo('koalemos')
+
+  if (!u) throw 'cannot find user'
 
   const spotify = await Spotify.get(u)
 
@@ -83,7 +98,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     case 'user':
       return {
         statusCode: 200,
-        body: JSON.stringify({ user: u }),
+        body: JSON.stringify({ user: u.user }),
       }
     case 'archive':
       const archive = new ArchiveAction(spotify)
@@ -134,7 +149,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }
   }
 
-  const result = await performActions(action)
+  const result = await performActions(u, action)
 
   return {
     statusCode: 200,

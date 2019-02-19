@@ -1,7 +1,6 @@
 import SpotifyWebApi, { Track, PlaylistTrack, User } from 'spotify-web-api-node'
 import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
 import * as HttpManager from 'spotify-web-api-node/src/http-manager'
-import { updateAccessToken } from './db/update'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
   return 'id' in obj
@@ -126,6 +125,7 @@ export type TrackForMove = { uri: string; type?: 'track'; id?: string }
 export type PlaylistID = { id: string; type?: 'playlist' }
 
 import { getEnv } from './env'
+import { Dynamo } from './db/dynamo'
 
 const env = getEnv().then(env => env.spotify)
 
@@ -133,8 +133,10 @@ export function displayTrack(track: Track): string {
   return `🎵 ${track.album.artists[0].name} - ${track.name}`
 }
 
-async function getClient(u: UserData) {
+async function getClient(dynamo: Dynamo) {
   const { clientId, clientSecret } = await env
+
+  let u = dynamo.user
 
   if (u.spotifyAuth.expiresAt < new Date().getTime()) {
     const { accessToken, refreshToken } = u.spotifyAuth
@@ -149,7 +151,11 @@ async function getClient(u: UserData) {
 
     const expiresAt = refreshed.body.expires_in * 1000 + new Date().getTime()
 
-    u = await updateAccessToken(u.id, refreshed.body.access_token, expiresAt)
+    u = await dynamo.updateAccessToken(
+      u.id,
+      refreshed.body.access_token,
+      expiresAt,
+    )
   }
 
   const { accessToken, refreshToken } = u.spotifyAuth
@@ -163,9 +169,8 @@ async function getClient(u: UserData) {
 }
 
 export class Spotify {
-  static async get(u?: UserData) {
-    if (!u) throw 'user required to initialize spotify'
-    const client = await getClient(u)
+  static async get(dynamo: Dynamo) {
+    const client = await getClient(dynamo)
 
     return new Spotify(client)
   }
