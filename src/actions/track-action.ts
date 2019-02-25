@@ -3,7 +3,7 @@ import { Spotify, displayTrack } from '../spotify'
 import { Track } from 'spotify-web-api-node'
 import { getTriageInfo } from './actionable-type'
 
-export function trackToData(track?: Track): undefined | TrackData {
+export function trackToData(track?: Track): undefined | BasicTrackData {
   if (!track) return undefined
 
   return {

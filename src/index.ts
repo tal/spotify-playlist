@@ -12,7 +12,6 @@ import { AfterTrackActionAction } from './actions/track-action'
 import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
-import { AlexaEventHandler } from './alexa-lambda'
 import { getDynamo } from './db/dynamo'
 
 function notEmpty<TValue>(
@@ -56,13 +55,6 @@ export const instant: APIGatewayProxyHandler = async ev => {
       path,
       pathParameters,
     }),
-  }
-}
-
-export const alexa: AlexaEventHandler = async (ev, ctx) => {
-  const { request } = ev
-  if (request.type === 'IntentRequest') {
-    request.intent.confirmationStatus
   }
 }
 
