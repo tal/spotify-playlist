@@ -1,7 +1,7 @@
 import { TrackAction, trackToData } from './track-action'
 
 export class MagicPromoteAction extends TrackAction {
-  idThrottleMs = 5 * 60 * 1000
+  idThrottleMs = 5 * (dev.isDev ? minutes : hours)
 
   async forStorage(): Promise<PromoteActionHistoryItemData> {
     return {

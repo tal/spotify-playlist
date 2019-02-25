@@ -11,7 +11,7 @@ declare interface ActionHistoryItemData {
   ttl?: number
 }
 
-declare interface TrackData {
+declare interface BasicTrackData {
   id: string
   uri: string
   name: string
@@ -21,5 +21,5 @@ declare interface TrackData {
 
 declare interface PromoteActionHistoryItemData extends ActionHistoryItemData {
   action: 'promote-track' | 'demote-track'
-  item?: TrackData
+  item?: BasicTrackData
 }

@@ -87,14 +87,27 @@ declare module 'spotify-web-api-node' {
   }
 
   export interface Album extends Entity {
-    album_type: 'album'
+    album_type: 'album' | 'single' | 'compilation'
+
+    /**
+     * Compare to album_type this field represents relationship between the artist and the album.
+     */
+    album_group?: 'album' | 'single' | 'compilation' | 'appears_on'
     artists: Artist[]
     available_markets: string[]
     external_urls: ExternalUrls
     images: Image[]
     name: string
+
+    /**
+     * The date the album was first released, for example 1981. Depending on the precision, it might be shown as 1981-12 or 1981-12-15.
+     */
     release_date: string
-    release_date_precision: string
+
+    /**
+     * The precision with which release_date value is known: year , month , or day.
+     */
+    release_date_precision: 'year' | 'month' | 'day'
     total_tracks: number
     type: 'album'
   }
@@ -109,6 +122,7 @@ declare module 'spotify-web-api-node' {
     album: Album
     artists: Artist[]
     disc_number: number
+    is_playable: boolean
     explicit: boolean
     duration_ms: number
     external_urls: ExternalUrls
