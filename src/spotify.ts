@@ -10,6 +10,17 @@ function hasURI(obj: { id: string } | { uri: string }): obj is { uri: string } {
   return 'uri' in obj
 }
 
+function groupArrayBy<T>(array: T[], count: number): T[][] {
+  let grouped: T[][] = []
+
+  for (let i = 0, j = array.length; i < j; i += count) {
+    let temparray = array.slice(i, i + count)
+    grouped.push(temparray)
+  }
+
+  return grouped
+}
+
 function asyncMemoize<T>(
   target: T,
   propertyKey: string,
@@ -357,10 +368,10 @@ export class Spotify {
   async addTrackToPlaylist(
     { id: playlistId }: PlaylistID,
     ...tracks: TrackForMove[]
-  ): Promise<{ snapshot_id: string } | undefined> {
+  ): Promise<{ snapshot_id: string }[]> {
     if (dev.drySpotify) {
       console.log('add track to playlist')
-      return Promise.resolve({ snapshot_id: 'fake' })
+      return Promise.resolve([{ snapshot_id: 'fake' }])
     }
 
     // Warning the track in playlist cache could cause issues if you try to add the same track multiple times
@@ -376,22 +387,27 @@ export class Spotify {
     }
 
     if (tracksToAdd.length === 0) {
-      return
+      return []
     }
 
     const uris = tracksToAdd.map(tr => tr.uri)
+    const uriSets = groupArrayBy(uris, 100)
 
     const client = this.client
-    const response = await WebApiRequest.builder(client.getAccessToken())
-      .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
-      .withHeaders({ 'Content-Type': 'application/json' })
-      .withBodyParameters({
-        uris,
-      })
-      .build()
-      .execute(HttpManager.post)
 
-    return response.body
+    const promises = uriSets.map(uris =>
+      WebApiRequest.builder(client.getAccessToken())
+        .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
+        .withHeaders({ 'Content-Type': 'application/json' })
+        .withBodyParameters({
+          uris,
+        })
+        .build()
+        .execute(HttpManager.post)
+        .then((r: any) => r.body),
+    )
+
+    return Promise.all(promises)
   }
 
   @logError

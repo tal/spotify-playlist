@@ -97,6 +97,14 @@ const options = {
       'playlist-name': 'Neo Tribal [A]',
     },
   },
+  scandinavian: {
+    pathParameters: {
+      action: 'handle-playlist',
+    },
+    queryStringParameters: {
+      'playlist-name': 'Scandinavian Women [A]',
+    },
+  },
   instant: {},
 }
 
