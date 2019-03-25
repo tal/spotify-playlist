@@ -25,6 +25,7 @@ export class AddTrackMutation extends Mutation<AddTrackMoveMutationData> {
 
   protected async mutate(client: Spotify) {
     const { tracks, playlist } = this.data
+
     await client.addTrackToPlaylist(playlist, ...tracks)
   }
 }
