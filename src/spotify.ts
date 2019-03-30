@@ -1,4 +1,10 @@
-import SpotifyWebApi, { Track, PlaylistTrack, User } from 'spotify-web-api-node'
+import SpotifyWebApi, {
+  Track,
+  PlaylistTrack,
+  User,
+  RecentlyPlayedResponse,
+  RecentlyPlayedItem,
+} from 'spotify-web-api-node'
 import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
 import * as HttpManager from 'spotify-web-api-node/src/http-manager'
 
@@ -494,5 +500,36 @@ export class Spotify {
       .withQueryParameters({ device_id: context.device.id })
       .build()
       .execute(HttpManager.post)
+  }
+
+  @logError
+  async recentlyPlayed(untilTS?: number) {
+    const maxLoops = 5
+
+    let items: RecentlyPlayedItem[] = []
+
+    for (let loopCount = 0; loopCount < maxLoops; loopCount += 1) {
+      const r = await WebApiRequest.builder(this.client.getAccessToken())
+        .withPath('/v1/me/player/recently-played')
+        .withHeaders({ 'Content-Type': 'application/json' })
+        .withQueryParameters({
+          limit: 50,
+        })
+        .build()
+        .execute(HttpManager.get)
+
+      const response = r.body as RecentlyPlayedResponse
+      const relevantItems = response.items.filter(
+        i => Date.parse(i.played_at) > (untilTS || 0),
+      )
+
+      if (relevantItems.length) {
+        items = [...items, ...relevantItems]
+      } else {
+        break
+      }
+    }
+
+    return items
   }
 }

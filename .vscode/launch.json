@@ -22,7 +22,7 @@
       "id": "action",
       "description": "Action to run",
       "type": "pickString",
-      "options": ["archive", "promote", "demote", "instant","neo-tribal","scandinavian"]
+      "options": ["archive", "promote", "demote", "instant","neo-tribal","scandinavian","playback"]
     },
     {
       "id": "env",

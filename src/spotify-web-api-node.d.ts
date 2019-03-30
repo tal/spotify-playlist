@@ -71,6 +71,19 @@ declare module 'spotify-web-api-node' {
     total: number
   }
 
+  type PagingWithCursorObject<T> = PagingObject<T> & {
+    cursors: {
+      before: string
+      after: string
+    }
+  }
+
+  export interface RecentlyPlayedItem {
+    track: Track
+    played_at: string
+    context?: Context
+  }
+
   export interface Device {
     id: string
     is_active: boolean
@@ -156,7 +169,7 @@ declare module 'spotify-web-api-node' {
     external_urls: ExternalUrls
     uri: string
     href: string
-    type: 'playlist' | 'artist' | 'album'
+    type: 'playlist' | 'artist' | 'album' | 'playlist_v2'
   }
 
   export interface PlaylistTrack {
@@ -170,6 +183,9 @@ declare module 'spotify-web-api-node' {
   type PlaylistsListResponse = PagingObject<Playlist>
   type PlaylistTrackListResponse = PagingObject<PlaylistTrack>
   type SavedTracksListResponse = PagingObject<SavedTrack>
+  export type RecentlyPlayedResponse = PagingWithCursorObject<
+    RecentlyPlayedItem
+  >
 
   interface SpotifyWebApiConfig {
     accessToken?: string

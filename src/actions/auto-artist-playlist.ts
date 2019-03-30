@@ -1,14 +1,10 @@
 import { Action } from './action'
 import { Spotify, TrackForMove } from '../spotify'
 import { PlaylistTrack, Track } from 'spotify-web-api-node'
-import {
-  AddTrackMutation,
-  AddTrackMoveMutationData,
-} from '../mutations/add-track-mutation'
-import { Mutation, MutationData } from '../mutations/mutation'
+import { AddTrackMutation } from '../mutations/add-track-mutation'
+import { Mutation } from '../mutations/mutation'
 
 export class AutoArtistPlaylist implements Action {
-  private client: Spotify
   private playlistID: string
   private tracks: Promise<PlaylistTrack[]>
   private savedTracks: Promise<Track[]>
@@ -18,7 +14,6 @@ export class AutoArtistPlaylist implements Action {
     { id: playlistID }: { id: string; type?: 'playlist' },
   ) {
     this.playlistID = playlistID
-    this.client = client
     this.created_at = new Date().getTime()
 
     this.tracks = client.tracksForPlaylist({ id: playlistID })
@@ -29,12 +24,13 @@ export class AutoArtistPlaylist implements Action {
     return `auto-artist:${this.playlistID}`
   }
 
-  async forStorage() {
+  async forStorage(mutations: Mutation<any>[]) {
+    const mutationData = mutations.map(m => m.storage)
     return {
       id: await this.getID(),
       created_at: this.created_at,
       action: 'auto-artist-playlist' as ActionTypes,
-      mutations: this.peformedMutations,
+      mutations: mutationData,
     }
   }
 
@@ -83,7 +79,6 @@ export class AutoArtistPlaylist implements Action {
     return tracksToAdd
   }
 
-  private peformedMutations: MutationData<AddTrackMoveMutationData>[] = []
   async perform() {
     const tracksToAdd = await this.tracksToAdd()
 
@@ -96,7 +91,6 @@ export class AutoArtistPlaylist implements Action {
       playlist: { id: this.playlistID },
     })
 
-    await mutation.run(this.client)
-    this.peformedMutations.push(mutation.storage)
+    return [[mutation]]
   }
 }

@@ -3,11 +3,13 @@ declare type ActionTypes =
   | 'demote-track'
   | 'archive'
   | 'auto-artist-playlist'
+  | 'process-playback-history'
 
 declare interface ActionHistoryItemData {
   id: string
   created_at: number
   action: ActionTypes
+  mutations: any[]
   ttl?: number
 }
 

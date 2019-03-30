@@ -29,6 +29,34 @@ export class Dynamo {
     }
   }
 
+  async setTrackRead({ id: trackId }: { id: string }, seen: TrackSeenContext) {
+    const id = this.gId(trackId)
+    const params: DocumentClient.UpdateItemInput = {
+      TableName: 'track',
+      Key: {
+        id,
+      },
+      UpdateExpression: `SET first_seen = if_not_exists(first_seen, :seen),
+        last_seen = :seen,
+        play_count = if_not_exists(play_count, :zero) + :incr`,
+      ExpressionAttributeValues: {
+        ':seen': seen,
+        ':incr': 1,
+        ':zero': 0,
+      },
+      ReturnValues: 'ALL_NEW',
+    }
+
+    const docs = await AWS.docs
+    const response = await docs.update(params).promise()
+
+    if (response.Attributes) {
+      return response.Attributes
+    } else {
+      throw 'no data returned from update for some reason'
+    }
+  }
+
   async updateAccessToken(id: string, token: string, expiresAt: number) {
     var params: DocumentClient.UpdateItemInput = {
       TableName: 'user',
@@ -38,6 +66,27 @@ export class Dynamo {
       ExpressionAttributeValues: {
         ':at': token,
         ':exp': expiresAt,
+      },
+      ReturnValues: 'ALL_NEW',
+    }
+
+    const docs = await AWS.docs
+    const response = await docs.update(params).promise()
+
+    if (response.Attributes) {
+      return response.Attributes as UserData
+    } else {
+      throw 'no data returned from update for some reason'
+    }
+  }
+
+  async updateLastPlayedAtProcessedTimestamp(id: string, ts: number) {
+    var params: DocumentClient.UpdateItemInput = {
+      TableName: 'user',
+      Key: { id },
+      UpdateExpression: 'set lastPlayedAtProcessedTimestamp = :ts',
+      ExpressionAttributeValues: {
+        ':ts': ts,
       },
       ReturnValues: 'ALL_NEW',
     }

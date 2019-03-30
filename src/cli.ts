@@ -117,6 +117,11 @@ const options = {
       action: 'instant',
     },
   },
+  playback: {
+    pathParameters: {
+      action: 'playback',
+    },
+  },
 }
 
 let action = process.argv[process.argv.length - 1]
@@ -150,15 +155,16 @@ async function main() {
     })
 
     console.log(result)
+
     notifier.notify({
       title: `Success for ${action}`,
-      message: `Yaybe`,
+      message: JSON.stringify(result),
     })
   } catch (err) {
     console.error(err)
     notifier.notify({
       title: `Error for ${action}`,
-      message: `${err}`,
+      message: `${JSON.stringify(err)}`,
     })
   }
 }

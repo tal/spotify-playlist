@@ -2,6 +2,11 @@ import { Action } from './action'
 import { Spotify, displayTrack } from '../spotify'
 import { Track } from 'spotify-web-api-node'
 import { getTriageInfo } from './actionable-type'
+import { Mutation } from '../mutations/mutation'
+import { AddTrackMutation } from '../mutations/add-track-mutation'
+import { RemoveTrackMutation } from '../mutations/remove-track-mutation'
+import { SaveTrackMutation } from '../mutations/save-track-mutation'
+import { UnsaveTrackMutation } from '../mutations/unsave-track-mutation'
 
 export function trackToData(track?: Track): undefined | BasicTrackData {
   if (!track) return undefined
@@ -71,9 +76,11 @@ function triageStateName(state: TriageState): TriageStates {
 export type AfterTrackActionAction = 'nothing' | 'skip-track'
 
 export abstract class TrackAction implements Action {
-  abstract forStorage(): Promise<ActionHistoryItemData>
+  abstract forStorage(
+    mutations: Mutation<any>[],
+  ): Promise<ActionHistoryItemData>
   abstract getID(): Promise<string>
-  abstract perform(): Promise<void>
+  abstract perform(): Promise<Mutation<any>[][]>
 
   idThrottleMs?: number | undefined
   private trackID?: string
@@ -182,33 +189,41 @@ export abstract class TrackAction implements Action {
     const promotedState = await promotedStateP
     const { inbox, current } = await getTriageInfo(client)
 
-    const promises: Promise<any>[] = []
+    const mutations: Mutation<any>[] = []
 
     if (currentState.current !== promotedState.current) {
       if (promotedState.current) {
-        promises.push(client.addTrackToPlaylist(current, currentTrack))
+        mutations.push(
+          new AddTrackMutation({ tracks: [currentTrack], playlist: current }),
+        )
       } else {
-        promises.push(client.removeTrackFromPlaylist(current, currentTrack))
+        mutations.push(
+          new RemoveTrackMutation({ track: currentTrack, playlist: current }),
+        )
       }
     }
 
     if (currentState.inbox !== promotedState.inbox) {
       if (promotedState.inbox) {
-        promises.push(client.addTrackToPlaylist(inbox, currentTrack))
+        mutations.push(
+          new AddTrackMutation({ tracks: [currentTrack], playlist: inbox }),
+        )
       } else {
-        promises.push(client.removeTrackFromPlaylist(inbox, currentTrack))
+        mutations.push(
+          new RemoveTrackMutation({ track: currentTrack, playlist: inbox }),
+        )
       }
     }
 
     if (currentState.saved !== promotedState.saved) {
       if (promotedState.saved) {
-        promises.push(client.saveTrack(currentTrack.id))
+        mutations.push(new SaveTrackMutation({ tracks: [currentTrack] }))
       } else {
-        promises.push(client.unsaveTrack(currentTrack.id))
+        mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
       }
     }
 
-    await Promise.all(promises)
+    return [mutations]
   }
 
   async demoteTrack() {
@@ -219,10 +234,14 @@ export abstract class TrackAction implements Action {
     const { inbox, current } = await getTriageInfo(client)
     const currentlyPlayingPlaylistP = client.currentlyPlayingPlaylist
 
-    const promises: Promise<any>[] = []
+    const mutations: Mutation<any>[] = []
 
-    promises.push(client.removeTrackFromPlaylist(current, currentTrack))
-    promises.push(client.removeTrackFromPlaylist(inbox, currentTrack))
+    mutations.push(
+      new RemoveTrackMutation({ playlist: current, track: currentTrack }),
+    )
+    mutations.push(
+      new RemoveTrackMutation({ playlist: inbox, track: currentTrack }),
+    )
 
     const currentlyPlayingPlaylist = await currentlyPlayingPlaylistP
     if (
@@ -230,13 +249,16 @@ export abstract class TrackAction implements Action {
       currentlyPlayingPlaylist.id !== current.id &&
       currentlyPlayingPlaylist.id !== inbox.id
     ) {
-      promises.push(
-        client.removeTrackFromPlaylist(currentlyPlayingPlaylist, currentTrack),
+      mutations.push(
+        new RemoveTrackMutation({
+          playlist: currentlyPlayingPlaylist,
+          track: currentTrack,
+        }),
       )
     }
 
-    promises.push(client.unsaveTrack(currentTrack.id))
+    mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
 
-    await Promise.all(promises)
+    return [mutations]
   }
 }

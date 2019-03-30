@@ -1,9 +1,11 @@
 import { Dynamo } from '../db/dynamo'
+import { Mutation } from '../mutations/mutation'
+import { Spotify } from '../spotify'
 
 export interface Action {
-  forStorage: () => Promise<ActionHistoryItemData>
+  forStorage: (mutations: Mutation<any>[]) => Promise<ActionHistoryItemData>
   getID: () => Promise<string>
-  perform: () => Promise<void>
+  perform: ({ dynamo }: { dynamo: Dynamo }) => Promise<Mutation<any>[][]>
   idThrottleMs?: number
 }
 
@@ -11,6 +13,7 @@ type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
 
 async function performAction<T>(
   dynamo: Dynamo,
+  client: Spotify,
   action: Action,
 ): Promise<Result<T, PerformActionReason>> {
   const id = action.getID()
@@ -29,29 +32,39 @@ async function performAction<T>(
     }
   }
 
-  await action.perform()
+  const mutationSets = await action.perform({ dynamo })
+  let allMutations: Mutation<any>[] = []
 
-  const data = await action.forStorage()
+  for (let mutations of mutationSets) {
+    await Promise.all(mutations.map(f => f.run({ client, dynamo })))
+    allMutations = allMutations.concat(mutations)
+  }
+
+  const data = await action.forStorage(allMutations)
 
   await dynamo.putActionHistory(data)
 
   return { reason: 'success' }
 }
 
+function arrayify<T>(val: T | T[]): T[] {
+  if (val instanceof Array) {
+    return val
+  } else {
+    return [val]
+  }
+}
+
 export async function performActions<T>(
   dynamo: Dynamo,
+  client: Spotify,
   action: Action | Action[],
 ): Promise<Result<T, PerformActionReason>[]> {
-  let actions: Action[]
-  if (action instanceof Array) {
-    actions = action
-  } else {
-    actions = [action]
-  }
+  const actions = arrayify(action)
 
   const results: Result<T, PerformActionReason>[] = []
   for (let action of actions) {
-    results.push(await performAction(dynamo, action))
+    results.push(await performAction(dynamo, client, action))
   }
 
   return results

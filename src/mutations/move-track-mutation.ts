@@ -1,5 +1,6 @@
 import { Mutation, MutationTypes } from './mutation'
 import { TrackForMove, PlaylistID, Spotify } from '../spotify'
+import { Dynamo } from '../db/dynamo'
 
 export interface MoveMutationData {
   tracks: TrackForMove[]
@@ -29,7 +30,13 @@ export class MoveTrackMutation extends Mutation<MoveMutationData> {
     }
   }
 
-  protected async mutate(client: Spotify) {
+  protected async mutate({
+    client,
+    dynamo,
+  }: {
+    client: Spotify
+    dynamo: Dynamo
+  }) {
     const { tracks, from, to } = this.data
     await client.moveTracks(from, to, ...tracks)
   }

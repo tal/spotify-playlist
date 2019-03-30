@@ -13,6 +13,9 @@ import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
 import { getDynamo } from './db/dynamo'
+import { AddTrackListenMutation } from './mutations/add-track-listen-mutation'
+import { ProcessPlaybackHistoryAction } from './actions/process-playback-history-action'
+import { userInfo } from 'os'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -79,18 +82,18 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     return (instant as any)(ev, ctx)
   }
 
-  const u = await getDynamo('koalemos')
+  const dynamo = await getDynamo('koalemos')
 
-  if (!u) throw 'cannot find user'
+  if (!dynamo) throw 'cannot find user'
 
-  const spotify = await Spotify.get(u)
+  const spotify = await Spotify.get(dynamo)
 
   let action: Action | Action[]
   switch (actionName) {
     case 'user':
       return {
         statusCode: 200,
-        body: JSON.stringify({ user: u.user }),
+        body: JSON.stringify({ user: dynamo.user }),
       }
     case 'archive':
       const archive = new ArchiveAction(spotify)
@@ -132,6 +135,10 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         .filter(notEmpty)
 
       break
+    case 'playback':
+      action = new ProcessPlaybackHistoryAction(spotify, dynamo.user)
+
+      break
     default:
       return {
         statusCode: 404,
@@ -141,7 +148,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }
   }
 
-  const result = await performActions(u, action)
+  const result = await performActions(dynamo, spotify, action)
 
   return {
     statusCode: 200,

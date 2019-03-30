@@ -5,6 +5,8 @@ import {
   MoveTrackMutation,
 } from '../mutations/move-track-mutation'
 import { settings } from '../settings'
+import { Dynamo } from '../db/dynamo'
+import { Mutation } from '../mutations/mutation'
 
 export class ArchiveAction implements Action {
   // idThrottleMs = 30 * 1000
@@ -18,10 +20,9 @@ export class ArchiveAction implements Action {
     return `archive`
   }
 
-  private mutationData: MoveMutationData[] = []
-
-  async forStorage() {
-    const ttl = this.mutationData.length
+  async forStorage(mutations: Mutation<any>[]) {
+    const mutationData = mutations.map(m => m.storage)
+    const ttl = mutationData.length
       ? undefined
       : Math.floor((this.created_at + 2 * days) / 1000)
 
@@ -29,7 +30,7 @@ export class ArchiveAction implements Action {
       id: await this.getID(),
       created_at: this.created_at,
       action: 'archive' as ActionTypes,
-      mutations: this.mutationData,
+      mutations: mutationData,
       ttl,
     }
   }
@@ -74,13 +75,6 @@ export class ArchiveAction implements Action {
       )
     }
 
-    const mutationPromises = mutations.map(m => m.run(this.client))
-    for (let p of mutationPromises) {
-      try {
-        await p
-      } catch {}
-    }
-
-    this.mutationData = mutations.map(m => m.data)
+    return [mutations]
   }
 }
