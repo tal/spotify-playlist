@@ -7,4 +7,5 @@ declare interface UserSpotifyAuthData {
 declare interface UserData {
   id: string
   spotifyAuth: UserSpotifyAuthData
+  lastPlayedAtProcessedTimestamp: number
 }

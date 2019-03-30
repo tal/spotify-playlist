@@ -1,12 +1,14 @@
 import { TrackAction, trackToData } from './track-action'
+import { Mutation } from '../mutations/mutation'
 
 export class DemoteAction extends TrackAction {
-  async forStorage(): Promise<PromoteActionHistoryItemData> {
+  async forStorage(mutations: Mutation<any>[]) {
     return {
       id: await this.getID(),
       created_at: this.created_at,
-      action: 'demote-track',
+      action: 'demote-track' as 'demote-track',
       item: trackToData(await this.track()),
+      mutations: mutations.map(m => m.storage),
     }
   }
 
@@ -17,7 +19,7 @@ export class DemoteAction extends TrackAction {
     return `demote:${currentTrack.uri}`
   }
 
-  perform(): Promise<void> {
+  perform() {
     return this.demoteTrack()
   }
 }

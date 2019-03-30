@@ -8,7 +8,7 @@ export interface AddTrackMoveMutationData {
 
 type D = AddTrackMoveMutationData
 
-export class AddTrackMutation extends Mutation<AddTrackMoveMutationData> {
+export class AddTrackMutation extends Mutation<D> {
   mutationType: MutationTypes = 'add-tracks'
 
   transformData({ tracks, playlist }: D): D {
@@ -23,7 +23,7 @@ export class AddTrackMutation extends Mutation<AddTrackMoveMutationData> {
     }
   }
 
-  protected async mutate(client: Spotify) {
+  protected async mutate({ client }: { client: Spotify }) {
     const { tracks, playlist } = this.data
 
     await client.addTrackToPlaylist(playlist, ...tracks)
