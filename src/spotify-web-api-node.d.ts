@@ -183,9 +183,8 @@ declare module 'spotify-web-api-node' {
   type PlaylistsListResponse = PagingObject<Playlist>
   type PlaylistTrackListResponse = PagingObject<PlaylistTrack>
   type SavedTracksListResponse = PagingObject<SavedTrack>
-  export type RecentlyPlayedResponse = PagingWithCursorObject<
-    RecentlyPlayedItem
-  >
+  export type RecentlyPlayedResponse =
+    PagingWithCursorObject<RecentlyPlayedItem>
 
   interface SpotifyWebApiConfig {
     accessToken?: string

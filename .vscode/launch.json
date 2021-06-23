@@ -7,13 +7,25 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Test Publish",
+      "name": "Test CLI",
       // "preLaunchTask": "build ts",
       "envFile": "${workspaceFolder}/.env",
       "env": {
         "NODE_ENV": "${input:env}"
       },
       "args": ["${workspaceFolder}/dist/cli.js", "${input:action}"],
+      "sourceMaps": true
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Test File",
+      // "preLaunchTask": "build ts",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "NODE_ENV": "${input:env}"
+      },
+      "args": ["${workspaceFolder}/dist/test.js"],
       "sourceMaps": true
     }
   ],
@@ -22,7 +34,16 @@
       "id": "action",
       "description": "Action to run",
       "type": "pickString",
-      "options": ["archive", "promote", "demote", "instant","neo-tribal","scandinavian","playback"]
+      "options": [
+        "archive",
+        "promote",
+        "demote",
+        "instant",
+        "neo-tribal",
+        "scandinavian",
+        "playback",
+        "auto-inbox"
+      ]
     },
     {
       "id": "env",

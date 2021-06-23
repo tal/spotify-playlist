@@ -9,6 +9,6 @@ export class SaveTrackMutation extends Mutation<SaveTrackMutationData> {
   mutationType: MutationTypes = 'save-track'
 
   protected async mutate({ client }: { client: Spotify }) {
-    client.saveTrack(...this.data.tracks.map(t => t.id))
+    client.saveTrack(...this.data.tracks.map((t) => t.id))
   }
 }

@@ -57,6 +57,41 @@ export class Dynamo {
     }
   }
 
+  async getSeenTracks(ids: string[]) {
+    const docs = await AWS.docs
+    const responses = await Promise.all(
+      ids.map(async (id) => {
+        const key = this.gId(id)
+        const resp = await docs
+          .get({
+            TableName: 'track',
+            Key: { id: key },
+          })
+          .promise()
+
+        return { id, item: resp.Item }
+      }),
+    )
+
+    const result: {
+      [k: string]:
+        | { id: string; found: false }
+        | { id: string; found: true; item: DocumentClient.AttributeMap }
+    } = {}
+
+    for (let id of ids) {
+      result[id] = { id, found: false }
+    }
+
+    for (let { id, item } of responses) {
+      if (item) {
+        result[id] = { id, found: true, item }
+      }
+    }
+
+    return Object.values(result)
+  }
+
   async updateAccessToken(id: string, token: string, expiresAt: number) {
     var params: DocumentClient.UpdateItemInput = {
       TableName: 'user',

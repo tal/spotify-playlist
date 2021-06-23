@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import notifier from 'node-notifier'
 import path from 'path'
+import { exit } from 'process'
 
 if (require.main !== module) {
-  throw 'Cannot require this module mus call directly'
+  throw 'Cannot require this module, must call directly'
 }
 
 var jsonPayload = {
@@ -112,6 +113,12 @@ const options = {
       'playlist-name': 'Scandanavian Women [A]',
     },
   },
+  'all-playlists': {
+    pathParameters: {
+      action: 'handle-playlists',
+    },
+    queryStringParameters: {},
+  },
   instant: {
     pathParameters: {
       action: 'instant',
@@ -120,6 +127,11 @@ const options = {
   playback: {
     pathParameters: {
       action: 'playback',
+    },
+  },
+  'auto-inbox': {
+    pathParameters: {
+      action: 'auto-inbox',
     },
   },
 }
@@ -139,11 +151,11 @@ const event = {
   ...(options as any)[action],
 }
 
-const lambdaLocal = require('lambda-local')
+import lambdaLocal = require('lambda-local')
 
 async function main() {
   try {
-    const result = await lambdaLocal.execute({
+    const result = (await lambdaLocal.execute({
       event,
       lambdaPath: path.join(__dirname, '../dist/index.js'),
       profilePath: '~/.aws/credentials',
@@ -152,13 +164,16 @@ async function main() {
       timeoutMs: 150000,
       envfile: path.join(__dirname, '../.env'),
       lambdaHandler: 'handler',
-    })
+    })) as { body: string; statusCode: number }
+
+    const body = JSON.parse(result.body)
+    const results = body.result
 
     console.log(result)
 
     notifier.notify({
       title: `Success for ${action}`,
-      message: JSON.stringify(result),
+      message: results[0].reason,
     })
   } catch (err) {
     console.error(err)

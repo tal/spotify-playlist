@@ -25,7 +25,7 @@ export class AutoArtistPlaylist implements Action {
   }
 
   async forStorage(mutations: Mutation<any>[]) {
-    const mutationData = mutations.map(m => m.storage)
+    const mutationData = mutations.map((m) => m.storage)
     return {
       id: await this.getID(),
       created_at: this.created_at,
@@ -62,7 +62,7 @@ export class AutoArtistPlaylist implements Action {
 
   async tracksToAdd() {
     const savedTracks = await this.savedTracksForArtists()
-    const existingTracks = (await this.tracks).map(t => t.track)
+    const existingTracks = (await this.tracks).map((t) => t.track)
 
     const existingTrackIDs: Set<string> = new Set()
     for (let track of existingTracks) {

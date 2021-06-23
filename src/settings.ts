@@ -34,6 +34,8 @@ export async function settings() {
     return {
       inbox: 'Inbox Test',
       current: 'Current Test',
+      releaseRadar: 'Release Radar',
+      discoverWeekly: 'Discover Weekly',
       timeToArchive: 1 * days,
       archivePlaylistNameFor: buildMyFn('[Test]'),
     }
@@ -41,6 +43,8 @@ export async function settings() {
     return {
       inbox: 'Inbox',
       current: 'Current',
+      releaseRadar: 'Release Radar',
+      discoverWeekly: 'Discover Weekly',
       timeToArchive: 30 * days,
       archivePlaylistNameFor: buildMyFn(),
     }

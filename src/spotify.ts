@@ -9,11 +9,19 @@ import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
 import * as HttpManager from 'spotify-web-api-node/src/http-manager'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
-  return 'id' in obj
+  if ('id' in obj) {
+    return !!obj.id
+  } else {
+    return false
+  }
 }
 
 function hasURI(obj: { id: string } | { uri: string }): obj is { uri: string } {
-  return 'uri' in obj
+  if ('uri' in obj) {
+    return !!obj.uri
+  } else {
+    return false
+  }
 }
 
 function groupArrayBy<T>(array: T[], count: number): T[][] {
@@ -37,7 +45,7 @@ function asyncMemoize<T>(
   const memkey = `__mem_${propertyKey}`
 
   if (typeof value === 'function') {
-    descriptor.value = function(this: any, ...args: any[]) {
+    descriptor.value = function (this: any, ...args: any[]) {
       if (this[memkey]) {
         console.log(`👯‍♀️ Cached ${propertyKey}`)
         return this[memkey]
@@ -57,13 +65,13 @@ function asyncMemoize<T>(
       return promise
     }
 
-    descriptor.value.reset = function() {
+    descriptor.value.reset = function () {
       this[memkey] = null
     }
   }
 
   if (typeof get === 'function') {
-    descriptor.get = function(this: any) {
+    descriptor.get = function (this: any) {
       if (this[memkey]) {
         console.log(`👯‍♀️ Cached ${propertyKey}`)
         return this[memkey]
@@ -93,7 +101,7 @@ function logError<T>(
   const { value, get, set } = descriptor
 
   if (typeof value === 'function') {
-    descriptor.value = async function(...args: any[]) {
+    descriptor.value = async function (...args: any[]) {
       try {
         console.log(`🔈 Executing ${propertyKey}`)
         const promise = value.apply(this, args)
@@ -106,7 +114,7 @@ function logError<T>(
     }
   }
   if (typeof get === 'function') {
-    descriptor.get = async function() {
+    descriptor.get = async function () {
       try {
         console.log(`🔈 Executing get ${propertyKey}`)
         const promise = get.call(this)
@@ -120,7 +128,7 @@ function logError<T>(
   }
 
   if (typeof set === 'function') {
-    descriptor.set = async function(val: any) {
+    descriptor.set = async function (val: any) {
       try {
         console.log(`🔈 Executing set ${propertyKey}`)
         set.call(this, val)
@@ -144,7 +152,7 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
 
-const env = getEnv().then(env => env.spotify)
+const env = getEnv().then((env) => env.spotify)
 
 export function displayTrack(track: Track): string {
   return `🎵 ${track.album.artists[0].name} - ${track.name}`
@@ -192,7 +200,7 @@ export class Spotify {
     return new Spotify(client)
   }
 
-  private constructor(private client: SpotifyWebApi) {}
+  private constructor(readonly client: SpotifyWebApi) {}
 
   private _meData?: User
   async myID() {
@@ -229,7 +237,7 @@ export class Spotify {
   async optionalPlaylist(named: string) {
     const playlists = await this.allPlaylists()
 
-    const playlist = playlists.find(p => p.name === named)
+    const playlist = playlists.find((p) => p.name === named)
 
     return playlist
   }
@@ -270,6 +278,7 @@ export class Spotify {
     if (!id) throw 'must provide id or name'
 
     if (id in this._tracks) {
+      console.log(`👯‍♀️ Cached read of playlist ${name ?? id}`)
       return this._tracks[id]
     }
 
@@ -287,6 +296,7 @@ export class Spotify {
       items = [...items, ...response.body.items]
     }
 
+    console.log(`📥 Writing cache of playlist ${name ?? id}`)
     this._tracks[id] = items
 
     return items
@@ -298,26 +308,29 @@ export class Spotify {
   ) {
     const tracks = await this.tracksForPlaylist(playlist)
 
+    let track: PlaylistTrack | undefined
     if (hasID(srcTrack)) {
-      return !!tracks.find(({ track }) => srcTrack.id === track.id)
+      track = tracks.find(({ track }) => srcTrack.id === track.id)
     } else if (hasURI(srcTrack)) {
-      return !!tracks.find(({ track }) => srcTrack.uri === track.uri)
+      track = tracks.find(({ track }) => srcTrack.uri === track.uri)
     } else {
       throw `somehow a bad value got in`
     }
+
+    return track
   }
 
   @asyncMemoize
   get player() {
     const player = Promise.resolve(this.client)
-      .then(client => client.getMyCurrentPlaybackState())
+      .then((client) => client.getMyCurrentPlaybackState())
       .then(({ body }) => body)
 
     return player
   }
 
   get currentTrack() {
-    return this.player.then(player => {
+    return this.player.then((player) => {
       if (
         player.currently_playing_type === 'track' &&
         player.item &&
@@ -329,13 +342,13 @@ export class Spotify {
   }
 
   get currentlyPlayingPlaylist() {
-    return this.player.then(async player => {
+    return this.player.then(async (player) => {
       if (!player.context) return
       if (player.context.type !== 'playlist') return
 
       const { uri } = player.context
       const playlists = await this.allPlaylists()
-      return playlists.find(playlist => playlist.uri === uri)
+      return playlists.find((playlist) => playlist.uri === uri)
     })
   }
 
@@ -347,7 +360,7 @@ export class Spotify {
     }
 
     return Promise.resolve(this.client)
-      .then(client => client.addToMySavedTracks(ids))
+      .then((client) => client.addToMySavedTracks(ids))
       .then(({ body }) => body)
   }
 
@@ -359,7 +372,7 @@ export class Spotify {
     }
 
     return Promise.resolve(this.client)
-      .then(client => client.removeFromMySavedTracks(ids))
+      .then((client) => client.removeFromMySavedTracks(ids))
       .then(({ body }) => body)
   }
 
@@ -396,12 +409,12 @@ export class Spotify {
       return []
     }
 
-    const uris = tracksToAdd.map(tr => tr.uri)
+    const uris = tracksToAdd.map((tr) => tr.uri)
     const uriSets = groupArrayBy(uris, 100)
 
     const client = this.client
 
-    const promises = uriSets.map(uris =>
+    const promises = uriSets.map((uris) =>
       WebApiRequest.builder(client.getAccessToken())
         .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
         .withHeaders({ 'Content-Type': 'application/json' })
@@ -471,7 +484,7 @@ export class Spotify {
     }
 
     let response = await this.client.getMySavedTracks({ limit: 50 })
-    let items = response.body.items.map(st => st.track)
+    let items = response.body.items.map((st) => st.track)
 
     while (response.body.next) {
       response = await this.client.getMySavedTracks({
@@ -479,7 +492,7 @@ export class Spotify {
         offset: response.body.limit + response.body.offset,
       })
 
-      items = [...items, ...response.body.items.map(st => st.track)]
+      items = [...items, ...response.body.items.map((st) => st.track)]
     }
 
     this._savedTracks = items
@@ -520,7 +533,7 @@ export class Spotify {
 
       const response = r.body as RecentlyPlayedResponse
       const relevantItems = response.items.filter(
-        i => Date.parse(i.played_at) > (untilTS || 0),
+        (i) => Date.parse(i.played_at) > (untilTS || 0),
       )
 
       if (relevantItems.length) {

@@ -36,7 +36,7 @@ async function performAction<T>(
   let allMutations: Mutation<any>[] = []
 
   for (let mutations of mutationSets) {
-    await Promise.all(mutations.map(f => f.run({ client, dynamo })))
+    await Promise.all(mutations.map((f) => f.run({ client, dynamo })))
     allMutations = allMutations.concat(mutations)
   }
 

@@ -13,7 +13,7 @@ export class ProcessPlaybackHistoryAction implements Action {
   }
 
   async getID() {
-    return 'process-playback-history'
+    return `process-playback-history:${this.created_at}`
   }
 
   async forStorage(mutations: Mutation<any>[]) {
@@ -22,8 +22,8 @@ export class ProcessPlaybackHistoryAction implements Action {
     return {
       id: await this.getID(),
       created_at: this.created_at,
-      action: 'process-playback-history' as 'process-playback-history',
-      mutations: mutations.map(m => m.storage),
+      action: 'process-playback-history' as const,
+      mutations: mutations.map((m) => m.storage),
       ttl,
     }
   }
@@ -38,13 +38,13 @@ export class ProcessPlaybackHistoryAction implements Action {
     playedItems = playedItems
       .sort((a, b) => Date.parse(a.played_at) - Date.parse(b.played_at))
       .filter(
-        pi =>
+        (pi) =>
           Date.parse(pi.played_at) > this.user.lastPlayedAtProcessedTimestamp,
       )
 
     if (!playedItems.length) return []
 
-    const trackSeenArgs = playedItems.map(pi => {
+    const trackSeenArgs = playedItems.map((pi) => {
       const playedAt = Date.parse(pi.played_at)
       if (playedAt > mostRecentPlayedAt) mostRecentPlayedAt = playedAt
 
@@ -53,12 +53,12 @@ export class ProcessPlaybackHistoryAction implements Action {
         context: {
           uri: pi.context && pi.context.uri,
           played_at: playedAt,
-          exactness: 'played' as 'played',
+          exactness: 'played' as const,
         },
       }
     })
 
-    const mutations: Mutation<any>[][] = trackSeenArgs.map(args => [
+    const mutations: Mutation<any>[][] = trackSeenArgs.map((args) => [
       new AddTrackListenMutation(args),
     ])
 

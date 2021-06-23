@@ -6,7 +6,7 @@ import { AWS } from '../aws'
 const TABLE_DIR = __dirname + '/../../config/dynamo-tables/'
 
 function getDataFromFile(path: string): Promise<CreateTableInput> {
-  return promisify(fs.readFile)(path, 'utf8').then(text => {
+  return promisify(fs.readFile)(path, 'utf8').then((text) => {
     const data: CreateTableInput = JSON.parse(text)
     return data
   })
@@ -19,7 +19,7 @@ function getTableDefinitions() {
         rej(err)
       } else {
         const promises = items
-          .map(file => TABLE_DIR + file)
+          .map((file) => TABLE_DIR + file)
           .map(getDataFromFile)
         succ(promises)
       }
@@ -35,8 +35,8 @@ async function createdTables() {
     tablesPromise = dynamo
       .listTables()
       .promise()
-      .then(data => data.TableNames)
-      .then(names => {
+      .then((data) => data.TableNames)
+      .then((names) => {
         if (!names) throw 'no tables found'
         return names
       })
@@ -63,7 +63,7 @@ export async function deleteAllTables() {
 export async function ensuareAllTablesCreated() {
   const tables = await TableDefinition.all()
 
-  const promises = tables.map(table => table.createIfNeeded())
+  const promises = tables.map((table) => table.createIfNeeded())
   await Promise.all(promises)
 }
 
