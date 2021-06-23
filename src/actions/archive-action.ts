@@ -17,7 +17,7 @@ export class ArchiveAction implements Action {
   }
 
   async getID() {
-    return `archive`
+    return `archive:${this.created_at}`
   }
 
   async forStorage(mutations: Mutation<any>[]) {
