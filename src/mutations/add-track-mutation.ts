@@ -13,7 +13,7 @@ export class AddTrackMutation extends Mutation<D> {
 
   transformData({ tracks, playlist }: D): D {
     return {
-      tracks: tracks.map(track => ({
+      tracks: tracks.map((track) => ({
         uri: track.uri,
         id: track.id,
       })),

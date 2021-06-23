@@ -21,7 +21,7 @@ export class ArchiveAction implements Action {
   }
 
   async forStorage(mutations: Mutation<any>[]) {
-    const mutationData = mutations.map(m => m.storage)
+    const mutationData = mutations.map((m) => m.storage)
     const ttl = mutationData.length
       ? undefined
       : Math.floor((this.created_at + 2 * days) / 1000)

@@ -122,9 +122,13 @@ export abstract class TrackAction implements Action {
     if (!currentTrack) throw 'no track provided 4'
     const { inbox, current } = await getTriageInfo(client)
 
-    const trackInInbox = client.trackInPlaylist(currentTrack, inbox)
-    const trackInCurrent = client.trackInPlaylist(currentTrack, current)
-    const trackIsSaved = client.trackIsSaved(currentTrack)
+    const trackInInbox = client
+      .trackInPlaylist(currentTrack, inbox)
+      .then((t) => !!t)
+    const trackInCurrent = client
+      .trackInPlaylist(currentTrack, current)
+      .then((t) => !!t)
+    const trackIsSaved = client.trackIsSaved(currentTrack).then((t) => !!t)
 
     return {
       saved: await trackIsSaved,

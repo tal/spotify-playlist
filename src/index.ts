@@ -16,6 +16,8 @@ import { getDynamo } from './db/dynamo'
 import { AddTrackListenMutation } from './mutations/add-track-listen-mutation'
 import { ProcessPlaybackHistoryAction } from './actions/process-playback-history-action'
 import { userInfo } from 'os'
+import { AddPlaylistToInbox } from './actions/add-playlist-to-inbox'
+import { getTriageInfo } from './actions/actionable-type'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -46,7 +48,7 @@ function doAfterCurrentTrack(client: Spotify, ev: APIGatewayProxyEvent) {
   }
 }
 
-export const instant: APIGatewayProxyHandler = async ev => {
+export const instant: APIGatewayProxyHandler = async (ev) => {
   const { queryStringParameters, pathParameters, path } = ev
 
   throw 'omg'
@@ -131,13 +133,17 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     case 'handle-playlists':
       const playlists = await spotify.allPlaylists()
       action = playlists
-        .map(playlist => actionForPlaylist(playlist, spotify))
+        .map((playlist) => actionForPlaylist(playlist, spotify))
         .filter(notEmpty)
 
       break
     case 'playback':
       action = new ProcessPlaybackHistoryAction(spotify, dynamo.user)
 
+      break
+    case 'auto-inbox':
+      const { discoverWeekly } = await getTriageInfo(spotify)
+      action = new AddPlaylistToInbox(spotify, discoverWeekly)
       break
     default:
       return {

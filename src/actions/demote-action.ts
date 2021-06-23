@@ -8,7 +8,7 @@ export class DemoteAction extends TrackAction {
       created_at: this.created_at,
       action: 'demote-track' as 'demote-track',
       item: trackToData(await this.track()),
-      mutations: mutations.map(m => m.storage),
+      mutations: mutations.map((m) => m.storage),
     }
   }
 

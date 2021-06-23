@@ -6,9 +6,7 @@ interface UpdateLastPlayedProcessedData {
   userId: string
 }
 
-export class UpdateLastPlayedProcessedMutation extends Mutation<
-  UpdateLastPlayedProcessedData
-> {
+export class UpdateLastPlayedProcessedMutation extends Mutation<UpdateLastPlayedProcessedData> {
   mutationType: MutationTypes = 'update-last-played-processed'
 
   protected async mutate({ dynamo }: { dynamo: Dynamo }) {
