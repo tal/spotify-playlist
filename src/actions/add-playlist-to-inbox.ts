@@ -5,16 +5,19 @@ import { Spotify } from '../spotify'
 import { Action } from './action'
 import { getTriageInfo } from './actionable-type'
 
+type PlaylistTrack = import('spotify-web-api-node').PlaylistTrack
+
 export class AddPlaylistToInbox implements Action {
   // readonly idThrottleMs = 20 * minutes
   readonly playlistID: string
   readonly created_at: number
-  readonly tracks: Promise<import('spotify-web-api-node').PlaylistTrack[]>
+  readonly tracks: Promise<PlaylistTrack[]>
   spotify: Spotify
 
   constructor(
     client: Spotify,
     { id: playlistID }: { id: string; type?: 'playlist' },
+    readonly trackFilter?: (track: PlaylistTrack) => boolean,
   ) {
     this.spotify = client
     this.playlistID = playlistID
@@ -28,7 +31,10 @@ export class AddPlaylistToInbox implements Action {
   }
 
   async perform({ dynamo }: { dynamo: Dynamo }) {
-    const tracks = await this.tracks
+    let tracks = await this.tracks
+    if (this.trackFilter) {
+      tracks = tracks.filter(this.trackFilter)
+    }
     const trackIDs = tracks.map((t) => t.track.id)
     const seenTracks = await dynamo.getSeenTracks(trackIDs)
 
@@ -38,7 +44,7 @@ export class AddPlaylistToInbox implements Action {
           return `spotify:track:${t.id}`
         }
       })
-      .filter((id): id is string => !!id)
+      .filter((uri): uri is string => !!uri)
       .map((uri) => ({ uri }))
 
     const { inbox } = await getTriageInfo(this.spotify)
