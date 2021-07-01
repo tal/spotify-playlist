@@ -5,6 +5,7 @@ declare type ActionTypes =
   | 'auto-artist-playlist'
   | 'process-playback-history'
   | 'add-playlist-to-inbox'
+  | 'scan-playlists-for-inbox'
 
 declare interface ActionHistoryItemData {
   id: string

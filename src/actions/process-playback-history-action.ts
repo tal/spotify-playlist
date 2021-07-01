@@ -6,7 +6,7 @@ import { UpdateLastPlayedProcessedMutation } from '../mutations/update-last-play
 import { Dynamo } from '../db/dynamo'
 
 export class ProcessPlaybackHistoryAction implements Action {
-  public created_at: number
+  readonly created_at: number
 
   constructor(private client: Spotify, private user: UserData) {
     this.created_at = new Date().getTime()

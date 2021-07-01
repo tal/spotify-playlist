@@ -18,6 +18,7 @@ import { ProcessPlaybackHistoryAction } from './actions/process-playback-history
 import { userInfo } from 'os'
 import { AddPlaylistToInbox } from './actions/add-playlist-to-inbox'
 import { getTriageInfo } from './actions/actionable-type'
+import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -142,8 +143,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
       break
     case 'auto-inbox':
-      const { discoverWeekly } = await getTriageInfo(spotify)
-      action = new AddPlaylistToInbox(spotify, discoverWeekly)
+      action = new ScanPlaylistsForInbox(spotify)
       break
     default:
       return {
