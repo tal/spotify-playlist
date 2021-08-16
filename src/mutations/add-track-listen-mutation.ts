@@ -1,22 +1,21 @@
 import { Mutation, MutationTypes } from './mutation'
-import { Dynamo } from '../db/dynamo'
+import { Dynamo, UpdateTrackParams } from '../db/dynamo'
 
-export interface AddTrackListenData {
+export type AddTrackListenData = {
   track: { id: string }
-  context: TrackSeenContext
-}
+} & UpdateTrackParams
 
 export class AddTrackListenMutation extends Mutation<AddTrackListenData> {
   mutationType: MutationTypes = 'add-track-listen'
 
-  transformData({ track, context }: AddTrackListenData): AddTrackListenData {
+  transformData(data: AddTrackListenData): AddTrackListenData {
     return {
-      track: { id: track.id },
-      context,
+      ...data,
+      track: { id: data.track.id }, // so you can pass in a whole track object but it'll only save out the ID
     }
   }
 
   protected async mutate({ dynamo }: { dynamo: Dynamo }) {
-    dynamo.setTrackRead(this.data.track, this.data.context)
+    dynamo.updateTrack(this.data.track, this.data)
   }
 }

@@ -19,6 +19,7 @@ import { userInfo } from 'os'
 import { AddPlaylistToInbox } from './actions/add-playlist-to-inbox'
 import { getTriageInfo } from './actions/actionable-type'
 import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
+import { ProcessManualTriage } from './actions/process-manual-triage'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -111,8 +112,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       action = new DemoteAction(spotify)
       break
     case 'handle-playlist':
-      const playlistName =
-        ev.queryStringParameters && ev.queryStringParameters['playlist-name']
+      const playlistName = ev.queryStringParameters?.['playlist-name']
 
       if (!playlistName) {
         return {
@@ -131,6 +131,26 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }
       action = foo
       break
+    case 'handle-known-playlists':
+      const playlistNames = [
+        'Modern Funk? [A]',
+        'Neo Tribal [A]',
+        'Scandanavian Women [A]',
+        'California Girls [A]',
+      ] as const
+
+      action = await Promise.all(
+        playlistNames.map(async (playlistName) => {
+          const playlist = await spotify.playlist(playlistName)
+
+          const foo = actionForPlaylist(playlist, spotify)
+          if (!foo) {
+            throw `no action for playlist ${playlistName}`
+          }
+          return foo
+        }),
+      )
+      break
     case 'handle-playlists':
       const playlists = await spotify.allPlaylists()
       action = playlists
@@ -139,11 +159,17 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
       break
     case 'playback':
-      action = new ProcessPlaybackHistoryAction(spotify, dynamo.user)
+      action = [
+        new ProcessPlaybackHistoryAction(spotify, dynamo.user),
+        new ProcessManualTriage(spotify),
+      ]
 
       break
     case 'auto-inbox':
-      action = new ScanPlaylistsForInbox(spotify)
+      action = [
+        new ProcessPlaybackHistoryAction(spotify, dynamo.user),
+        new ScanPlaylistsForInbox(spotify),
+      ]
       break
     default:
       return {

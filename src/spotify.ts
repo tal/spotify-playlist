@@ -487,12 +487,17 @@ export class Spotify {
     let items = response.body.items.map((st) => st.track)
 
     while (response.body.next) {
-      response = await this.client.getMySavedTracks({
-        limit: response.body.limit,
-        offset: response.body.limit + response.body.offset,
-      })
+      try {
+        response = await this.client.getMySavedTracks({
+          limit: response.body.limit,
+          offset: response.body.limit + response.body.offset,
+        })
 
-      items = [...items, ...response.body.items.map((st) => st.track)]
+        items = [...items, ...response.body.items.map((st) => st.track)]
+      } catch (error) {
+        console.error(error)
+        throw error
+      }
     }
 
     this._savedTracks = items

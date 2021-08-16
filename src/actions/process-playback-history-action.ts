@@ -50,8 +50,9 @@ export class ProcessPlaybackHistoryAction implements Action {
 
       return {
         track: pi.track,
+        increment_by: 1,
         context: {
-          uri: pi.context && pi.context.uri,
+          uri: pi.context?.uri,
           played_at: playedAt,
           exactness: 'played' as const,
         },
