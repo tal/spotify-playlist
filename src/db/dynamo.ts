@@ -1,5 +1,6 @@
-import { AWS } from '../aws'
+import { chunk } from 'lodash'
 import { DocumentClient } from 'aws-sdk/clients/dynamodb'
+import { AWS } from '../aws'
 
 export class Dynamo {
   constructor(public readonly user: UserData) {}
@@ -29,20 +30,25 @@ export class Dynamo {
     }
   }
 
-  async setTrackRead({ id: trackId }: { id: string }, seen: TrackSeenContext) {
+  async addTrackTriageAction(
+    { id: trackId }: { id: string },
+    action: TrackTriageAction,
+  ) {
     const id = this.gId(trackId)
+
     const params: DocumentClient.UpdateItemInput = {
       TableName: 'track',
       Key: {
         id,
       },
-      UpdateExpression: `SET first_seen = if_not_exists(first_seen, :seen),
-        last_seen = :seen,
-        play_count = if_not_exists(play_count, :zero) + :incr`,
+      UpdateExpression:
+        'SET #triage_actions = list_append(if_not_exists(#triage_actions, :empty_list), :location)',
+      ExpressionAttributeNames: {
+        '#triage_actions': 'triage_actions',
+      },
       ExpressionAttributeValues: {
-        ':seen': seen,
-        ':incr': 1,
-        ':zero': 0,
+        ':location': [action],
+        ':empty_list': [],
       },
       ReturnValues: 'ALL_NEW',
     }
@@ -52,6 +58,98 @@ export class Dynamo {
 
     if (response.Attributes) {
       return response.Attributes
+    } else {
+      throw 'no data returned from update for some reason'
+    }
+  }
+
+  async updateTrack(
+    { id: trackId }: { id: string },
+    { seen, increment_by, triageActions }: UpdateTrackParams,
+  ) {
+    const id = this.gId(trackId)
+
+    const ExpressionAttributeValues: DocumentClient.UpdateItemInput['ExpressionAttributeValues'] =
+      {}
+
+    const expressionParts = []
+
+    if (typeof increment_by === 'number' && increment_by > 0) {
+      expressionParts.push(
+        `play_count = if_not_exists(play_count, :zero) + :incr`,
+      )
+      ExpressionAttributeValues[':zero'] = 0
+      ExpressionAttributeValues[':incr'] = increment_by
+    }
+
+    if (seen) {
+      expressionParts.push(`first_seen = if_not_exists(first_seen, :seen)`)
+      ExpressionAttributeValues[':seen'] = seen
+      if (seen.exactness === 'played') {
+        expressionParts.push(`last_seen = :seen`)
+      }
+    }
+
+    if (triageActions) {
+      expressionParts.push(
+        'triage_actions = list_append(if_not_exists(triage_actions, :empty_list), :app_actions)',
+      )
+      ExpressionAttributeValues[':empty_list'] = []
+      ExpressionAttributeValues[':app_actions'] = triageActions
+    }
+
+    const params: DocumentClient.UpdateItemInput = {
+      TableName: 'track',
+      Key: {
+        id,
+      },
+      UpdateExpression: 'SET ' + expressionParts.join(', '),
+      ExpressionAttributeValues,
+      ReturnValues: 'ALL_NEW',
+    }
+
+    if (expressionParts.length === 0) {
+      throw `Must have at least one action given`
+    }
+
+    const docs = await AWS.docs
+    const response = await docs.update(params).promise()
+
+    if (response.Attributes) {
+      return response.Attributes
+    } else {
+      throw 'no data returned from update for some reason'
+    }
+  }
+
+  async getTracks(ids: string[]) {
+    const trackMap: Record<string, TrackItem | undefined> = {}
+
+    const chunked = chunk(ids, 100)
+    for (let ids of chunked) {
+      const Keys = ids.map((id) => ({ id: this.gId(id) }))
+      const response = await AWS.docs
+        .batchGet({
+          RequestItems: {
+            track: {
+              Keys,
+            },
+          },
+        })
+        .promise()
+
+      if (response.Responses) {
+        const tracks = response.Responses.track as TrackItem[]
+
+        for (let track of tracks) {
+          const m = track.id.match(/:(.+)/)
+          trackMap[m![1]] = track
+        }
+      }
+    }
+
+    if (Object.keys(trackMap).length > 0) {
+      return trackMap
     } else {
       throw 'no data returned from update for some reason'
     }
@@ -166,6 +264,12 @@ export class Dynamo {
 
     return user
   }
+}
+
+export type UpdateTrackParams = {
+  seen?: TrackSeenContext
+  increment_by?: number
+  triageActions?: TrackTriageAction[]
 }
 
 async function getUser(userName: string) {

@@ -113,6 +113,12 @@ const options = {
       'playlist-name': 'Scandanavian Women [A]',
     },
   },
+  'known-playlists': {
+    pathParameters: {
+      action: 'handle-known-playlists',
+    },
+    queryStringParameters: {},
+  },
   'all-playlists': {
     pathParameters: {
       action: 'handle-playlists',

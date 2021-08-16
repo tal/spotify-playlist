@@ -12,8 +12,13 @@ function noRemixes(track: PlaylistTrack) {
   return !/remix/i.test(name)
 }
 
+function noLive(track: PlaylistTrack) {
+  const name = track.track.name
+  return !/live/i.test(name)
+}
+
 function onlyOriginals(track: PlaylistTrack) {
-  return noRemixes(track)
+  return noRemixes(track) && noLive(track)
 }
 
 export class ScanPlaylistsForInbox implements Action {

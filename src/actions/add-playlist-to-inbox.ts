@@ -1,6 +1,7 @@
 import { Dynamo } from '../db/dynamo'
 import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { Mutation } from '../mutations/mutation'
+import { TriageActionMutation } from '../mutations/triage-action-mutation'
 import { Spotify } from '../spotify'
 import { Action } from './action'
 import { getTriageInfo } from './actionable-type'
@@ -65,8 +66,20 @@ export class AddPlaylistToInbox implements Action {
       tracks: idsNotSeen,
       playlist: inbox,
     })
+    const inboxedMutatons = idsNotSeen.map(({ uri }) => {
+      const m = uri.match(/^spotify:track:(.+)/)
+      if (m) {
+        const id = m[1]
+        return new TriageActionMutation({
+          track: { id },
+          actionType: 'inboxed',
+        })
+      } else {
+        throw 'everything should be a valid uri'
+      }
+    })
 
-    return [[addTracks]]
+    return [[addTracks, ...inboxedMutatons]]
   }
 
   async forStorage(mutations: Mutation<any>[]): Promise<ActionHistoryItemData> {

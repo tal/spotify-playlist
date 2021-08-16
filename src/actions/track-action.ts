@@ -7,6 +7,7 @@ import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { RemoveTrackMutation } from '../mutations/remove-track-mutation'
 import { SaveTrackMutation } from '../mutations/save-track-mutation'
 import { UnsaveTrackMutation } from '../mutations/unsave-track-mutation'
+import { TriageActionMutation } from '../mutations/triage-action-mutation'
 
 export function trackToData(track?: Track): undefined | BasicTrackData {
   if (!track) return undefined
@@ -189,9 +190,9 @@ export abstract class TrackAction implements Action {
     if (!currentTrack) throw 'no track provided 2'
     console.log(`🏃 Magic Promote: ${displayTrack(currentTrack)}`)
 
+    const { inbox, current } = await getTriageInfo(client)
     const currentState = await currentStateP
     const promotedState = await promotedStateP
-    const { inbox, current } = await getTriageInfo(client)
 
     const mutations: Mutation<any>[] = []
 
@@ -199,6 +200,12 @@ export abstract class TrackAction implements Action {
       if (promotedState.current) {
         mutations.push(
           new AddTrackMutation({ tracks: [currentTrack], playlist: current }),
+        )
+        mutations.push(
+          new TriageActionMutation({
+            track: currentTrack,
+            actionType: 'promote',
+          }),
         )
       } else {
         mutations.push(
@@ -211,6 +218,12 @@ export abstract class TrackAction implements Action {
       if (promotedState.inbox) {
         mutations.push(
           new AddTrackMutation({ tracks: [currentTrack], playlist: inbox }),
+        )
+        mutations.push(
+          new TriageActionMutation({
+            track: currentTrack,
+            actionType: 'inboxed',
+          }),
         )
       } else {
         mutations.push(
@@ -226,6 +239,13 @@ export abstract class TrackAction implements Action {
         mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
       }
     }
+
+    mutations.push(
+      new TriageActionMutation({
+        track: currentTrack,
+        actionType: 'upvote',
+      }),
+    )
 
     return [mutations]
   }
@@ -262,6 +282,12 @@ export abstract class TrackAction implements Action {
     }
 
     mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
+    mutations.push(
+      new TriageActionMutation({
+        track: currentTrack,
+        actionType: 'remove',
+      }),
+    )
 
     return [mutations]
   }

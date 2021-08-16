@@ -11,6 +11,7 @@ export type MutationTypes =
   | 'unsave-track'
   | 'add-track-listen'
   | 'update-last-played-processed'
+  | 'triage-action'
 
 export interface MutationData<T> {
   type: 'mutation'
