@@ -618,8 +618,9 @@ simple-swizzle@^0.2.2:
   dependencies:
     is-arrayish "^0.3.1"
 
-"spotify-web-api-node@file:../spotify-web-api-node":
+spotify-web-api-node@tal/spotify-web-api-node#tal/add-response-to-errors:
   version "4.0.0"
+  resolved "https://codeload.github.com/tal/spotify-web-api-node/tar.gz/3cdf04d180e10abd8eaab79eb4bd3dab14daf708"
   dependencies:
     superagent "^3.7.0"
 
