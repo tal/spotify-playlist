@@ -151,6 +151,7 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
+import { delay } from './utils/delay'
 
 const env = getEnv().then((env) => env.spotify)
 
@@ -252,7 +253,7 @@ export class Spotify {
 
   @logError
   private async createPlaylist(named: string) {
-    const result = await this.client.createPlaylist(await this.myID(), named)
+    const result = await this.client.createPlaylist(named)
     ;(this.allPlaylists as any).reset()
 
     return result.body
@@ -476,33 +477,56 @@ export class Spotify {
     return resp.body
   }
 
-  private _savedTracks?: Track[]
+  private _savedTracks?: Promise<Track[]>
   @logError
-  async mySavedTracks() {
+  mySavedTracks() {
     if (this._savedTracks) {
       return this._savedTracks
     }
 
-    let response = await this.client.getMySavedTracks({ limit: 50 })
-    let items = response.body.items.map((st) => st.track)
+    // Did an async function call because going straight to a promise felt like a pita
+    const run = async () => {
+      let response = await this.client.getMySavedTracks({ limit: 50 })
+      let items = response.body.items.map((st) => st.track)
 
-    while (response.body.next) {
-      try {
-        response = await this.client.getMySavedTracks({
-          limit: response.body.limit,
-          offset: response.body.limit + response.body.offset,
-        })
+      let i = 1
 
-        items = [...items, ...response.body.items.map((st) => st.track)]
-      } catch (error) {
-        console.error(error)
-        throw error
+      while (response.body.next) {
+        try {
+          const offset = response.body.limit + response.body.offset
+
+          console.log(`🛫 mySavedTracks page ${i} offset:${offset}`)
+
+          response = await this.client.getMySavedTracks({
+            limit: response.body.limit,
+            offset,
+          })
+
+          i += 1
+
+          items = [...items, ...response.body.items.map((st) => st.track)]
+        } catch (error) {
+          console.error(error)
+          if (error.response?.headers?.['retry-after']) {
+            const retryAfter = parseInt(
+              error.response.headers['retry-after'],
+              10,
+            )
+            const delayFor = retryAfter * 1000 + 100
+            console.log(`⏲ mySavedTracks delaying page ${i} for ${delayFor}ms`)
+            await delay(delayFor)
+            continue
+          } else {
+            throw error
+          }
+        }
       }
+      return items
     }
 
-    this._savedTracks = items
+    this._savedTracks = run()
 
-    return items
+    return this._savedTracks
   }
 
   @logError

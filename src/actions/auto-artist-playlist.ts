@@ -83,7 +83,8 @@ export class AutoArtistPlaylist implements Action {
     const tracksToAdd = await this.tracksToAdd()
 
     if (tracksToAdd.length === 0) {
-      throw `No tracks to be added to ${this.playlistID}`
+      console.error(`No tracks to be added to playlist:${this.playlistID}`)
+      return []
     }
 
     const mutation = new AddTrackMutation({
