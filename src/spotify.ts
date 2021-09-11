@@ -2,11 +2,8 @@ import SpotifyWebApi, {
   Track,
   PlaylistTrack,
   User,
-  RecentlyPlayedResponse,
   RecentlyPlayedItem,
 } from 'spotify-web-api-node'
-import * as WebApiRequest from 'spotify-web-api-node/src/webapi-request'
-import * as HttpManager from 'spotify-web-api-node/src/http-manager'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
   if ('id' in obj) {
@@ -152,6 +149,7 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
 import { delay } from './utils/delay'
+import { type } from 'os'
 
 const env = getEnv().then((env) => env.spotify)
 
@@ -415,19 +413,24 @@ export class Spotify {
 
     const client = this.client
 
+    // const promises = uriSets.map((uris) =>
+    //   WebApiRequest.builder(client.getAccessToken())
+    //     .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
+    //     .withHeaders({ 'Content-Type': 'application/json' })
+    //     .withBodyParameters({
+    //       uris,
+    //     })
+    //     .build()
+    //     .execute(HttpManager.post)
+    //     .then((r: any) => r.body),
+    // )
+
     const promises = uriSets.map((uris) =>
-      WebApiRequest.builder(client.getAccessToken())
-        .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
-        .withHeaders({ 'Content-Type': 'application/json' })
-        .withBodyParameters({
-          uris,
-        })
-        .build()
-        .execute(HttpManager.post)
-        .then((r: any) => r.body),
+      client.addTracksToPlaylist(playlistId, uris),
     )
 
-    return Promise.all(promises)
+    const responses = await Promise.all(promises)
+    return responses.map((r) => r.body)
   }
 
   @logError
@@ -445,14 +448,15 @@ export class Spotify {
     })
 
     const client = this.client
-    const response = await WebApiRequest.builder(client.getAccessToken())
-      .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
-      .withHeaders({ 'Content-Type': 'application/json' })
-      .withBodyParameters({
-        tracks,
-      })
-      .build()
-      .execute(HttpManager.del)
+    const response = await client.removeTracksFromPlaylist(playlistId, tracks)
+    // const response = await WebApiRequest.builder(client.getAccessToken())
+    //   .withPath(`/v1/playlists/${encodeURIComponent(playlistId)}/tracks`)
+    //   .withHeaders({ 'Content-Type': 'application/json' })
+    //   .withBodyParameters({
+    //     tracks,
+    //   })
+    //   .build()
+    //   .execute(HttpManager.del)
 
     return response.body
   }
@@ -505,13 +509,14 @@ export class Spotify {
           i += 1
 
           items = [...items, ...response.body.items.map((st) => st.track)]
-        } catch (error) {
+        } catch (error: any) {
           console.error(error)
-          if (error.response?.headers?.['retry-after']) {
-            const retryAfter = parseInt(
-              error.response.headers['retry-after'],
-              10,
-            )
+          const retryAfterStr: string | undefined =
+            error.response?.headers?.['retry-after'] ??
+            error.headers?.['retry-after']
+
+          if (retryAfterStr) {
+            const retryAfter = parseInt(retryAfterStr, 10)
             const delayFor = retryAfter * 1000 + 100
             console.log(`⏲ mySavedTracks delaying page ${i} for ${delayFor}ms`)
             await delay(delayFor)
@@ -536,12 +541,7 @@ export class Spotify {
       return
     }
 
-    return WebApiRequest.builder(this.client.getAccessToken())
-      .withPath('/v1/me/player/next')
-      .withHeaders({ 'Content-Type': 'application/json' })
-      .withQueryParameters({ device_id: context.device.id })
-      .build()
-      .execute(HttpManager.post)
+    return this.client.skipToNext({ device_id: context.device.id })
   }
 
   @logError
@@ -549,19 +549,12 @@ export class Spotify {
     const maxLoops = 5
 
     let items: RecentlyPlayedItem[] = []
+    //api.spotify.com/v1/me/player/recently-played?before=1631066767955&limit=50
 
     for (let loopCount = 0; loopCount < maxLoops; loopCount += 1) {
-      const r = await WebApiRequest.builder(this.client.getAccessToken())
-        .withPath('/v1/me/player/recently-played')
-        .withHeaders({ 'Content-Type': 'application/json' })
-        .withQueryParameters({
-          limit: 50,
-        })
-        .build()
-        .execute(HttpManager.get)
+      const r = await this.client.getMyRecentlyPlayedTracks({ limit: 50 })
 
-      const response = r.body as RecentlyPlayedResponse
-      const relevantItems = response.items.filter(
+      const relevantItems = r.body.items.filter(
         (i) => Date.parse(i.played_at) > (untilTS || 0),
       )
 
