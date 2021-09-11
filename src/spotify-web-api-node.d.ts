@@ -299,11 +299,10 @@ declare module 'spotify-web-api-node' {
      * it contains an error object. Not returned if a callback is given.
      */
     addTracksToPlaylist(
-      userId: string,
       playlistId: string,
       tracks: string[],
       options?: { position: number },
-    ): Promise<SpotifyResponse<{}>>
+    ): Promise<SpotifyResponse<{ snapshot_id: string }>>
 
     /**
      * Get tracks in a playlist.
@@ -360,6 +359,45 @@ declare module 'spotify-web-api-node' {
       limit?: number
       offset?: number
     }): Promise<SpotifyResponse<SavedTracksListResponse>>
+
+    /**
+     * Remove tracks from a playlist.
+     * @param {string} playlistId The playlist's ID
+     * @param {Object[]} tracks An array of objects containing a property called uri with the track URI (String), and
+     * an optional property called positions (int[]), e.g. { uri : "spotify:track:491rM2JN8KvmV6p0oDDuJT", positions : [0, 15] }
+     * @param {Object} options Options, snapshot_id being the only one.
+     * @param {requestCallback} [callback] Optional callback method to be called instead of the promise.
+     * @returns {Promise|undefined} A promise that if successful returns an object containing a snapshot_id. If rejected,
+     * it contains an error object. Not returned if a callback is given.
+     */
+    removeTracksFromPlaylist(
+      playlistId: string,
+      tracks: { uri: string; positions?: number[] }[],
+      options?: { snapshot_id?: any },
+    ): Promise<SpotifyResponse<any>>
+
+    /**
+     * Skip the Current User's Playback To Next Track
+     * @param {Object} [options] Options, being device_id. If left empty will target the user's currently active device.
+     * @example skipToNext().then(...)
+     * @returns {Promise|undefined} A promise that if successful, resolves into an empty response,
+     *          otherwise an error. Not returned if a callback is given.
+     */
+    skipToNext(options?: { device_id?: string }): Promise<SpotifyResponse<any>>
+
+    /**
+     * Get the Current User's Recently Played Tracks
+     * @param {Object} [options] Options, being type, after, limit, before.
+     * @param {requestCallback} [callback] Optional callback method to be called instead of the promise.
+     * @returns {Promise|undefined} A promise that if successful, resolves into a paging object of play history objects,
+     *          otherwise an error. Not returned if a callback is given. Note that the response will be empty
+     *          in case the user has enabled private session.
+     */
+    getMyRecentlyPlayedTracks(options?: {
+      limit?: number
+      after?: number | string
+      before?: number | string
+    }): Promise<SpotifyResponse<RecentlyPlayedResponse>>
   }
 }
 
