@@ -551,8 +551,15 @@ export class Spotify {
     let items: RecentlyPlayedItem[] = []
     //api.spotify.com/v1/me/player/recently-played?before=1631066767955&limit=50
 
+    let before: string | undefined | number
+
     for (let loopCount = 0; loopCount < maxLoops; loopCount += 1) {
-      const r = await this.client.getMyRecentlyPlayedTracks({ limit: 50 })
+      const r = await this.client.getMyRecentlyPlayedTracks({
+        limit: 50,
+        before,
+      })
+
+      before = r.body.cursors?.before
 
       const relevantItems = r.body.items.filter(
         (i) => Date.parse(i.played_at) > (untilTS || 0),
