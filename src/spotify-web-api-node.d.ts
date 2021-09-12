@@ -72,9 +72,9 @@ declare module 'spotify-web-api-node' {
   }
 
   type PagingWithCursorObject<T> = PagingObject<T> & {
-    cursors: {
-      before: string
-      after: string
+    cursors?: {
+      before?: string
+      after?: string
     }
   }
 
