@@ -94,6 +94,14 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
   let action: Action | Action[]
   switch (actionName) {
+    case 'frequent-crawling':
+      action = [
+        new ArchiveAction(spotify),
+        new ProcessPlaybackHistoryAction(spotify, dynamo.user),
+        new ProcessManualTriage(spotify),
+        new ScanPlaylistsForInbox(spotify),
+      ]
+      break
     case 'user':
       return {
         statusCode: 200,
