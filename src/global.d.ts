@@ -10,15 +10,24 @@ declare interface Result<S, R> {
   error?: Error
 }
 
-declare module NodeJS {
-  interface Global {
-    dev: DevSettings
-    seconds: number
-    minutes: number
-    hours: number
-    days: number
-  }
-}
+// declare module NodeJS {
+//   interface global {
+//     dev: DevSettings
+//     seconds: number
+//     minutes: number
+//     hours: number
+//     days: number
+//   }
+// }
+
+// declare module global {
+//   var dev: DevSettings
+//   var seconds: number
+//   var minutes: number
+//   var hours: number
+//   var days: number
+// }
+
 declare const dev: DevSettings
 
 /** number of ms in a second */

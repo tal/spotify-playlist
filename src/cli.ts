@@ -172,22 +172,26 @@ async function main() {
       lambdaHandler: 'handler',
     })) as { body: string; statusCode: number }
 
+    if (result.statusCode != 200) {
+      throw (`error2 ${JSON.stringify(result)}`)
+    }
+
     const body = JSON.parse(result.body)
     const results = body.result
 
-    console.log(result)
+    console.log(JSON.stringify(result))
 
-    notifier.notify({
-      title: `Success for ${action}`,
-      message: results[0].reason,
-    })
+    // notifier.notify({
+    //   title: `Success for ${JSON.stringify(action)}`,
+    //   message: results[0].reason,
+    // })
   } catch (err) {
     console.error(err)
-    notifier.notify({
-      title: `Error for ${action}`,
-      message: `${JSON.stringify(err)}`,
-    })
+    // notifier.notify({
+    //   title: `Error for ${action}`,
+    //   message: `${JSON.stringify(err)}`,
+    // })
   }
 }
 
-main()
+main().catch(err => console.error((`error in main ${err}`)))

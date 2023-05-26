@@ -188,10 +188,19 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }
   }
 
-  const result = await performActions(dynamo, spotify, action)
-
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ result }),
+  try {
+    const result = await performActions(dynamo, spotify, action)
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ result }),
+    }
+  } catch (err) {
+    if (!err) {
+      err = "unknown error"
+    }
+    return {
+      statusCode: 500,
+      error: JSON.stringify(err),
+    }
   }
 }
