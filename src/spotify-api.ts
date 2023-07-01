@@ -1,11 +1,10 @@
 import SpotifyWebAPI from 'spotify-web-api-node'
 
+import { getAllSync, getKey, setKeySync } from './db'
 import { getCallbackURL } from './spotify-auth'
-import { getKey, setKeySync } from './db'
-import CONFIG from '../config.json'
 
 let spotifyApi = new SpotifyWebAPI({
-  ...CONFIG.api,
+  ...getAllSync().api,
 })
 
 export default spotifyApi
@@ -22,11 +21,13 @@ async function apiIsExpired() {
   const now = new Date().getTime()
   const expiresAt = await getExpiresAt()
 
-  return now > expiresAt
+  if (expiresAt) {
+    return now > expiresAt.getTime()
+  }
 }
 
-export async function getAPI({shouldRefresh = false} = {}) {
-  if (shouldRefresh || await apiIsExpired) {
+export async function getAPI({ shouldRefresh = false } = {}) {
+  if (shouldRefresh || (await apiIsExpired)) {
     await refresh()
   }
 
@@ -60,8 +61,12 @@ const SCOPES = [
 export function getAuthUrl() {
   const url = getCallbackURL()
 
+  if (!url) {
+    throw 'no callback gotten'
+  }
+
   spotifyApi.setRedirectURI(url)
-  return spotifyApi.createAuthorizeURL(SCOPES, 'my-state');
+  return spotifyApi.createAuthorizeURL(SCOPES, 'my-state')
 }
 
 export async function refresh() {

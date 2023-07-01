@@ -199,6 +199,14 @@ declare module 'spotify-web-api-node' {
 
     getAccessToken(): string
 
+    setRedirectURI(URI: string): void
+
+    setAccessToken(token: string): void
+
+    createAuthorizeURL(scopes: string[], state: string): string
+
+    authorizationCodeGrant(code: string): { body: Record<string, any> }
+
     /**
      * Get information about the user that has signed in (the current user).
      * @param {requestCallback} [callback] Optional callback method to be called instead of the promise.
@@ -344,9 +352,12 @@ declare module 'spotify-web-api-node' {
      *          created playlist. If rejected, it contains an error object. Not returned if a callback is given.
      */
     createPlaylist(
+      username: string,
       playlist: string,
       options?: { description?: string; public?: boolean },
     ): Promise<SpotifyResponse<Playlist>>
+
+    createPlaylist(playlist: string): Promise<SpotifyResponse<Playlist>>
 
     /**
      * Retrieve the tracks that are saved to the authenticated users Your Music library.

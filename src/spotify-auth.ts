@@ -8,10 +8,11 @@ import { setKeySync } from './db'
 const CALLBACK_PATH = '/auth/spotify/callback'
 const START_PATH = '/auth/spotify'
 
-async function handleCallback({code}) {
+async function handleCallback({ code }: { code: string }) {
   const data = await spotifyApi.authorizationCodeGrant(code)
 
-  const expiresAt = new Date().getTime() + data.body['expires_in'] * 1000
+  const expiresAt: number =
+    new Date().getTime() + data.body['expires_in'] * 1000
 
   setKeySync('api.expiresAt', expiresAt)
 
@@ -26,23 +27,28 @@ async function handleCallback({code}) {
   close()
 }
 
-function handleRequest(req, resp) {
-  const { query, pathname } = url.parse(req.url, true);
+function handleRequest(req: any, resp: any) {
+  const { query, pathname } = url.parse(req.url, true)
+  const code = query.code as string | undefined
+
+  if (!code) {
+    throw 'no code present in response'
+  }
 
   let respText = ''
 
   switch (pathname) {
     case CALLBACK_PATH:
       respText = `Query: ${JSON.stringify(query)}`
-      handleCallback(query).catch((err) => {
+      handleCallback({ code }).catch((err) => {
         console.error(`Callback error: `, err)
       })
-      break;
-      case START_PATH:
-      case '/':
-      case '':
+      break
+    case START_PATH:
+    case '/':
+    case '':
       respText = `<a href=${getAuthUrl()}>Go along and auth</a>`
-      break;
+      break
     default:
       resp.writeHead(404)
       respText = 'not found'
@@ -50,11 +56,11 @@ function handleRequest(req, resp) {
 
   // resp.writeHead(200, { 'Content-Type': 'text/plain'});
   // response.setHeader('Content-Type', 'text/html');
-  resp.end(respText);
+  resp.end(respText)
 }
 
-let currentServer
-let port
+let currentServer: http.Server | null
+let port: number | null
 
 export async function createServer() {
   if (!currentServer) {

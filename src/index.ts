@@ -78,6 +78,10 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       statusCode: 404,
       body: JSON.stringify({
         error: 'no action name given',
+        request: {
+          pathParameters: ev.pathParameters,
+          queryStringParameters: ev.queryStringParameters,
+        },
       }),
     }
   }
@@ -196,7 +200,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     }
   } catch (err) {
     if (!err) {
-      err = "unknown error"
+      err = 'unknown error'
     }
     return {
       statusCode: 500,

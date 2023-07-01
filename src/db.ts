@@ -1,21 +1,21 @@
 import _ from 'lodash'
 import path from 'path'
-import Promise from 'bluebird'
 import jsonfile from 'jsonfile'
 
 const CONFIG_PATH = path.resolve(__dirname, '../config.json')
 
-const readFile = Promise.promisify(jsonfile.readFile)
-const writeFile = Promise.promisify(jsonfile.writeFile)
+let cache: object | undefined
 
-let cache
+export function getAllSync() {
+  return jsonfile.readFileSync(CONFIG_PATH)
+}
 
-export async function getKey(key) {
+export async function getKey(key: string) {
   let config
   if (cache) {
     config = cache
   } else {
-    config = await readFile(CONFIG_PATH)
+    config = await jsonfile.readFile(CONFIG_PATH)
     cache = config
   }
 
@@ -36,25 +36,24 @@ function getConfigSync() {
   }
 
   return config
-
 }
 
-export function getKeySync(key) {
+export function getKeySync(key: string) {
   return _.get(getConfigSync(), key)
 }
 
-export function setKeySync(key, value) {
+export function setKeySync(key: string, value: any) {
   const config = getConfigSync()
 
   _.set(config, key, value)
 
-  jsonfile.writeFileSync(CONFIG_PATH, config, {spaces: 2})
-  cache = null
+  jsonfile.writeFileSync(CONFIG_PATH, config, { spaces: 2 })
+  cache = undefined
 
   return config
 }
 
-export async function setKey(key, value) {
+export async function setKey(key: string, value: any) {
   count += 1
   let localCount = count
   console.log(`starting: ${localCount}`)
@@ -65,15 +64,15 @@ export async function setKey(key, value) {
     throw 'previous write failed, so this one is'
   }
 
-  const config = await readFile(CONFIG_PATH)
+  const config = await jsonfile.readFile(CONFIG_PATH)
 
   console.log(`read config: ${localCount}`)
 
   _.set(config, key, value)
 
   console.log(`start write config: ${localCount}`)
-  setPromise = writeFile(CONFIG_PATH, config, {spaces: 2})
-  cache = null
+  setPromise = jsonfile.writeFile(CONFIG_PATH, config, { spaces: 2 })
+  cache = undefined
 
   await setPromise
 

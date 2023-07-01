@@ -1,11 +1,7 @@
-// @flow
-
-import Promise from 'bluebird'
-
 import { getAPI } from '../spotify-api'
 import { getKey } from '../db'
 
-let playlists
+let playlists: any
 
 async function allPlaylists() {
   let body
@@ -22,7 +18,7 @@ async function allPlaylists() {
   return body.items
 }
 
-export async function getPlaylistByName(name) {
+export async function getPlaylistByName(name: string) {
   const playlists = await allPlaylists()
 
   for (let playlist of playlists) {
@@ -47,22 +43,34 @@ export async function getTargetPlaylist() {
   throw 'no playlist found'
 }
 
-const MONTH_NAME = ["January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+const MONTH_NAME = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ]
 
-function playlistNameForDate(added_at) {
+function playlistNameForDate(added_at: Date) {
   return `${added_at.getFullYear()} - ${MONTH_NAME[added_at.getMonth()]}`
 }
 
 type MoveTrack = {
-  trackId: string,
-  track: any,
-  targetPlaylistName: string,
-  soucePlaylistId: string,
+  trackId: string
+  sourcePlaylistId: string
+  track: any
+  diff?: number
+  targetPlaylistName: string
 }
 
-async function createPlaylist(name, options = {public: true}) {
+async function createPlaylist(name: string, options = { public: true }) {
   const spotifyAPI = await getAPI()
   const username = await getKey('username')
 
@@ -75,41 +83,54 @@ async function createPlaylist(name, options = {public: true}) {
   return playlist
 }
 
-async function tracksToArchive(): MoveTrack[] {
+async function tracksToArchive(): Promise<MoveTrack[]> {
   const spotifyAPI = await getAPI()
   const username = await getKey('username')
   const currentPlaylist = await getTargetPlaylist()
 
-  const tracksData = await spotifyAPI.getPlaylistTracks(username, currentPlaylist.id)
+  const tracksData = await spotifyAPI.getPlaylistTracks(
+    username,
+    currentPlaylist.id,
+  )
 
   const items = tracksData.body.items
 
-  return items.map(({track, added_at}) => {
-    added_at = new Date(added_at)
+  return items
+    .map(
+      ({
+        track,
+        added_at,
+      }: {
+        track: { id: string }
+        added_at: string | Date
+      }) => {
+        added_at = new Date(added_at)
 
-    let diff = new Date().getTime() - added_at.getTime()
+        let diff = new Date().getTime() - added_at.getTime()
 
-    return {
-      trackId: track.id,
-      track,
-      diff: Math.floor(diff / 1000 / 60 / 60 / 24),
-      targetPlaylistName: playlistNameForDate(added_at),
-      sourcePlaylistId: currentPlaylist.id,
-    }
-  }).filter(({diff}) => diff >= 30)
+        return {
+          trackId: track.id,
+          track,
+          diff: Math.floor(diff / 1000 / 60 / 60 / 24),
+          targetPlaylistName: playlistNameForDate(added_at),
+          sourcePlaylistId: currentPlaylist.id,
+        } satisfies MoveTrack
+      },
+    )
+    .filter(({ diff }: { diff: number }) => diff >= 30)
 }
 
 type PlaylistTrackList = {
   [key: string]: {
-    playlistName: string,
-    tracks: string[],
+    playlistName: string
+    tracks: string[]
   }
 }
 
 class TrackMoveSet {
   toAdd: PlaylistTrackList
   toRemove: PlaylistTrackList
-  locked: bool
+  locked: boolean
 
   constructor() {
     this.toAdd = {}
@@ -125,11 +146,7 @@ class TrackMoveSet {
 
     console.log(`moving ${item.track.name} - ${item.track.uri}`)
 
-    const {
-      targetPlaylistName,
-      trackId,
-      sourcePlaylistId,
-    } = item
+    const { targetPlaylistName, trackId, sourcePlaylistId } = item
 
     this.ensureAddPlaylist(targetPlaylistName)
     this.ensureRemovePlaylist(sourcePlaylistId)
@@ -149,7 +166,7 @@ class TrackMoveSet {
     }
   }
 
-  ensureRemovePlaylist(name:string) {
+  ensureRemovePlaylist(name: string) {
     if (!(name in this.toRemove)) {
       this.toRemove[name] = {
         playlistName: name,
@@ -168,15 +185,14 @@ class TrackMoveSet {
     const spotifyAPI = await getAPI()
     const username = await getKey('username')
 
-    let promises = []
+    let promises: any[] = []
 
     for (let playlistName in this.toAdd) {
       let targetPlaylist
 
       try {
         targetPlaylist = await getPlaylistByName(playlistName)
-      }
-      catch(err) {
+      } catch (err) {
         const createResponse = await createPlaylist(playlistName)
         targetPlaylist = createResponse.body
       }
@@ -186,7 +202,11 @@ class TrackMoveSet {
       const { tracks } = this.toAdd[playlistName]
 
       promises.push(
-        spotifyAPI.addTracksToPlaylist(username, targetPlaylistId, tracks),
+        spotifyAPI.addTracksToPlaylist(
+          username,
+          targetPlaylistId,
+          tracks as any,
+        ),
       )
     }
 
@@ -194,17 +214,20 @@ class TrackMoveSet {
       const { tracks } = this.toRemove[playlistName]
 
       const uris = tracks.map((uri) => {
-        return {uri}
+        return { uri }
       })
 
       promises.push(
-        spotifyAPI.removeTracksFromPlaylist(username, playlistName, uris),
+        spotifyAPI.removeTracksFromPlaylist(
+          username,
+          playlistName as any,
+          uris as any,
+        ),
       )
     }
 
     return Promise.all(promises)
   }
-
 }
 
 export async function moveTracksFromPlaylistToPlaylist() {

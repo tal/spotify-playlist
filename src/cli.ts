@@ -173,7 +173,7 @@ async function main() {
     })) as { body: string; statusCode: number }
 
     if (result.statusCode != 200) {
-      throw (`error2 ${JSON.stringify(result)}`)
+      throw `error2 ${JSON.stringify(result)}`
     }
 
     const body = JSON.parse(result.body)
@@ -194,4 +194,4 @@ async function main() {
   }
 }
 
-main().catch(err => console.error((`error in main ${err}`)))
+main().catch((err) => console.error(`error in main ${err}`))
