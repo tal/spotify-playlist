@@ -37,6 +37,7 @@
       "options": [
         "archive",
         "promote",
+        "promotes",
         "demote",
         "instant",
         "known-playlists",

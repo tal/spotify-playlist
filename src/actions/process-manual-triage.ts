@@ -6,8 +6,9 @@ import { Action } from './action'
 import { getTriageInfo } from './actionable-type'
 
 export class ProcessManualTriage implements Action {
-  readonly idThrottleMs = undefined
+  readonly idThrottleMs: number | undefined = undefined
   readonly created_at: number
+  readonly type: string = 'process-manual-triage'
 
   constructor(private spotify: Spotify) {
     this.created_at = new Date().getTime()

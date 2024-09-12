@@ -20,6 +20,7 @@ import { AddPlaylistToInbox } from './actions/add-playlist-to-inbox'
 import { getTriageInfo } from './actions/actionable-type'
 import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 import { ProcessManualTriage } from './actions/process-manual-triage'
+import { SkipToNextTrack } from './actions/skip-to-next-track'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -43,10 +44,9 @@ function doAfterCurrentTrack(client: Spotify, ev: APIGatewayProxyEvent) {
 
   switch (foo) {
     case 'nothing':
-      break
+      return null
     case 'skip-track':
-      client.skipToNextTrack()
-      break
+      return new SkipToNextTrack(client)
   }
 }
 
@@ -96,7 +96,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
   const spotify = await Spotify.get(dynamo)
 
-  let action: Action | Action[]
+  let action: Action | (Action | null)[]
   switch (actionName) {
     case 'frequent-crawling':
       action = [
@@ -116,12 +116,13 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       action = archive
       break
     case 'promote':
-      doAfterCurrentTrack(spotify, ev)
-      action = new MagicPromoteAction(spotify)
+      action = [
+        doAfterCurrentTrack(spotify, ev),
+        new MagicPromoteAction(spotify),
+      ]
       break
     case 'demote':
-      doAfterCurrentTrack(spotify, ev)
-      action = new DemoteAction(spotify)
+      action = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
       break
     case 'handle-playlist':
       const playlistName = ev.queryStringParameters?.['playlist-name']

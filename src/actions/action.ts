@@ -6,13 +6,14 @@ export interface Action {
   forStorage?: (mutations: Mutation<any>[]) => Promise<ActionHistoryItemData>
   getID: () => Promise<string>
   perform: ({ dynamo }: { dynamo: Dynamo }) => Promise<Mutation<any>[][]>
-  idThrottleMs?: number
+  idThrottleMs?: number | undefined
   type: string
+  name?: () => Promise<string>
 }
 
 type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
 
-type ActionResult = { action_name: string; action_type: string }
+type ActionResult = { action_name: string; action_type: string; name?: string }
 
 async function performAction(
   dynamo: Dynamo,
@@ -48,9 +49,14 @@ async function performAction(
     await dynamo.putActionHistory(data)
   }
 
+  let name: string | undefined
+  if ('name' in action && action.name) {
+    name = await action.name()
+  }
+
   return {
     reason: 'success',
-    value: { action_name: await id, action_type: action.name },
+    value: { action_name: await id, action_type: action.type, name },
   }
 }
 

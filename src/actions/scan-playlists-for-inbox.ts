@@ -22,8 +22,9 @@ function onlyOriginals(track: PlaylistTrack) {
 }
 
 export class ScanPlaylistsForInbox implements Action {
-  readonly idThrottleMs = undefined
+  readonly idThrottleMs: number | undefined = undefined
   readonly created_at: number
+  readonly type: string = 'scan-playlists-for-inbox'
 
   readonly playlistActions: Promise<AddPlaylistToInbox>[] = []
 

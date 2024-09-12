@@ -1,8 +1,10 @@
 import { TrackAction, trackToData } from './track-action'
 import { Mutation } from '../mutations/mutation'
+import { Action } from './action'
 
-export class MagicPromoteAction extends TrackAction {
-  idThrottleMs = 5 * (dev.isDev ? minutes : hours)
+export class MagicPromoteAction extends TrackAction implements Action {
+  idThrottleMs: number = 5 * (dev.isDev ? minutes : hours)
+  type: string = 'magic-promote'
 
   async forStorage(
     mutations: Mutation<any>[],

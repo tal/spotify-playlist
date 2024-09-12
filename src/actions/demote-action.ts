@@ -1,7 +1,9 @@
 import { TrackAction, trackToData } from './track-action'
 import { Mutation } from '../mutations/mutation'
+import { Action } from './action'
 
-export class DemoteAction extends TrackAction {
+export class DemoteAction extends TrackAction implements Action {
+  readonly type: string = 'demote'
   async forStorage(mutations: Mutation<any>[]) {
     return {
       id: await this.getID(),

@@ -87,6 +87,7 @@ export abstract class TrackAction implements Action {
   private trackID?: string
   private afterCurrentTrack: AfterTrackActionAction = 'nothing'
   public created_at: number
+  abstract type: string
 
   constructor(
     private client: Spotify,

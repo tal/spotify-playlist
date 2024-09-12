@@ -2,7 +2,10 @@ import _ from 'lodash'
 import path from 'path'
 import jsonfile from 'jsonfile'
 
-const CONFIG_PATH = path.resolve(__dirname, '../config.json')
+export const CONFIG_PATH = path.resolve(
+  __dirname,
+  '../spotify-playlist-config.json',
+)
 
 let cache: object | undefined
 
@@ -19,7 +22,9 @@ export async function getKey(key: string) {
     cache = config
   }
 
-  return _.get(config, key)
+  const value = _.get(config, key)
+  console.log('got key', key, value)
+  return value
 }
 
 let setPromise = Promise.resolve()
