@@ -292,4 +292,13 @@ export abstract class TrackAction implements Action {
 
     return [mutations]
   }
+
+  async description() {
+    const player = await this.client.player
+    const currentPlaylist = await this.client.currentlyPlayingPlaylist
+
+    return `${this.type}: ${player.item?.name} in ${
+      currentPlaylist?.name ?? player.context?.type
+    }`
+  }
 }

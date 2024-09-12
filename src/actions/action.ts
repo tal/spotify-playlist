@@ -8,7 +8,7 @@ export interface Action {
   perform: ({ dynamo }: { dynamo: Dynamo }) => Promise<Mutation<any>[][]>
   idThrottleMs?: number | undefined
   type: string
-  name?: () => Promise<string>
+  description?: () => Promise<string>
 }
 
 type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
@@ -49,14 +49,18 @@ async function performAction(
     await dynamo.putActionHistory(data)
   }
 
-  let name: string | undefined
-  if ('name' in action && action.name) {
-    name = await action.name()
+  let description: string | undefined
+  if ('description' in action && action.description) {
+    description = await action.description()
   }
 
   return {
     reason: 'success',
-    value: { action_name: await id, action_type: action.type, name },
+    value: {
+      action_name: await id,
+      action_type: action.type,
+      name: description,
+    },
   }
 }
 

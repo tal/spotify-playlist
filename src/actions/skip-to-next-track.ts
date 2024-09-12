@@ -16,7 +16,7 @@ export class SkipToNextTrack implements Action {
     return []
   }
 
-  async name() {
+  async description() {
     const player = await this.client.player
     const currentPlaylist = await this.client.currentlyPlayingPlaylist
 
