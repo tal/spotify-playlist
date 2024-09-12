@@ -1,14 +1,11 @@
 import { Action } from './action'
 import { Spotify, TrackForMove } from '../spotify'
-import {
-  MoveMutationData,
-  MoveTrackMutation,
-} from '../mutations/move-track-mutation'
+import { MoveTrackMutation } from '../mutations/move-track-mutation'
 import { settings } from '../settings'
-import { Dynamo } from '../db/dynamo'
 import { Mutation } from '../mutations/mutation'
 
 export class ArchiveAction implements Action {
+  type = 'archive'
   // idThrottleMs = 30 * 1000
   public created_at: number
 

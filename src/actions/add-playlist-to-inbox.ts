@@ -9,6 +9,7 @@ import { getTriageInfo } from './actionable-type'
 type PlaylistTrack = import('spotify-web-api-node').PlaylistTrack
 
 export class AddPlaylistToInbox implements Action {
+  type = 'add-playlist-to-inbox'
   // readonly idThrottleMs = 20 * minutes
   readonly playlistID: string
   readonly created_at: number

@@ -5,6 +5,7 @@ import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { Mutation } from '../mutations/mutation'
 
 export class AutoArtistPlaylist implements Action {
+  type = 'auto-artist-playlist'
   private playlistID: string
   private tracks: Promise<PlaylistTrack[]>
   private savedTracks: Promise<Track[]>
