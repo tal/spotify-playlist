@@ -28,6 +28,7 @@ export class MagicPromoteAction extends TrackAction implements Action {
   perform(): Promise<Mutation<any>[][]> {
     return this.promoteTrack()
   }
+
   undo(): Promise<Mutation<any>[][]> {
     return this.demoteTrack()
   }

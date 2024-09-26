@@ -8,6 +8,7 @@ import { RemoveTrackMutation } from '../mutations/remove-track-mutation'
 import { SaveTrackMutation } from '../mutations/save-track-mutation'
 import { UnsaveTrackMutation } from '../mutations/unsave-track-mutation'
 import { TriageActionMutation } from '../mutations/triage-action-mutation'
+import { delay } from '../utils/delay'
 
 export function trackToData(track?: Track): undefined | BasicTrackData {
   if (!track) return undefined
@@ -253,7 +254,12 @@ export abstract class TrackAction implements Action {
 
   async demoteTrack() {
     const { client } = this
-    const currentTrack = await client.currentTrack
+    let currentTrack = await client.currentTrack
+    if (!currentTrack) {
+      ;(client.player as any).reset()
+      await delay(85)
+      currentTrack = await client.currentTrack
+    }
     if (!currentTrack) throw 'no track provided 3'
 
     const { inbox, current } = await getTriageInfo(client)
@@ -297,8 +303,8 @@ export abstract class TrackAction implements Action {
     const player = await this.client.player
     const currentPlaylist = await this.client.currentlyPlayingPlaylist
 
-    return `${this.type}: ${player.item?.name} in ${
-      currentPlaylist?.name ?? player.context?.type
-    }`
+    return `${this.type}: ${player.item?.artists[0].name} — ${
+      player.item?.name
+    } in ${currentPlaylist?.name ?? player.context?.type}`
   }
 }
