@@ -1,0 +1,21 @@
+auth {
+  mode: oauth2
+}
+
+auth:oauth2 {
+  grant_type: authorization_code
+  callback_url: http://localhost:3050/auth/spotify/callback
+  authorization_url: https://accounts.spotify.com/authorize
+  access_token_url: https://accounts.spotify.com/api/token
+  client_id: b714041067904423a37718a5a64dec689
+  client_secret: 768e11b8cd384b178cbde2c00f403f62
+  scope: playlist-read-private,user-read-recently-played,user-read-playback-position,user-library-read
+  state: foo
+  pkce: false
+}
+
+script:post-response {
+  if(req.getAuthMode() === 'oauth2' && res.body.access_token) {
+      bru.setVar('access_token_set_by_collection_script', res.body.access_token);
+  }
+}

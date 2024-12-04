@@ -236,7 +236,9 @@ export class Spotify {
   async optionalPlaylist(named: string) {
     const playlists = await this.allPlaylists()
 
-    const playlist = playlists.find((p) => p.name === named)
+    console.log(named, playlists)
+
+    const playlist = playlists.find((p) => p?.name === named)
 
     return playlist
   }

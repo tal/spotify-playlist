@@ -1,3 +1,4 @@
+import { add } from 'lodash'
 import { Dynamo } from '../db/dynamo'
 import { Mutation } from '../mutations/mutation'
 import { Spotify } from '../spotify'
@@ -26,23 +27,28 @@ export class ScanPlaylistsForInbox implements Action {
   readonly created_at: number
   readonly type: string = 'scan-playlists-for-inbox'
 
-  readonly playlistActions: Promise<AddPlaylistToInbox>[] = []
+  readonly playlistActions: AddPlaylistToInbox[] = []
 
   constructor(private spotify: Spotify) {
     this.created_at = new Date().getTime()
 
-    this.playlistActions.push(
-      getTriageInfo(spotify).then(
-        ({ discoverWeekly }) =>
-          new AddPlaylistToInbox(this.spotify, discoverWeekly),
-      ),
-    )
-    this.playlistActions.push(
-      getTriageInfo(spotify).then(
-        ({ releaseRadar }) =>
-          new AddPlaylistToInbox(this.spotify, releaseRadar, onlyOriginals),
-      ),
-    )
+    this.addActions()
+  }
+
+  async addActions() {
+    const { discoverWeekly, releaseRadar } = await getTriageInfo(this.spotify)
+
+    if (discoverWeekly) {
+      this.playlistActions.push(
+        new AddPlaylistToInbox(this.spotify, discoverWeekly),
+      )
+    }
+
+    if (releaseRadar) {
+      this.playlistActions.push(
+        new AddPlaylistToInbox(this.spotify, releaseRadar),
+      )
+    }
   }
 
   async getID() {

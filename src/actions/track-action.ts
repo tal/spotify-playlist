@@ -86,19 +86,11 @@ export abstract class TrackAction implements Action {
 
   idThrottleMs?: number | undefined
   private trackID?: string
-  private afterCurrentTrack: AfterTrackActionAction = 'nothing'
   public created_at: number
   abstract type: string
 
-  constructor(
-    private client: Spotify,
-    {
-      trackID,
-      afterCurrentTrack,
-    }: { trackID?: string; afterCurrentTrack?: AfterTrackActionAction } = {},
-  ) {
+  constructor(private client: Spotify, { trackID }: { trackID?: string } = {}) {
     this.trackID = trackID
-    this.afterCurrentTrack = afterCurrentTrack || 'nothing'
     this.created_at = new Date().getTime()
   }
 
@@ -175,11 +167,6 @@ export abstract class TrackAction implements Action {
   }
 
   async promoteTrack() {
-    if (this.afterCurrentTrack === 'skip-track') {
-      this.track().then(() => {
-        this.client.skipToNextTrack()
-      })
-    }
     const currentStateP = this.currentState()
     const promotedStateP = this.promotedState()
 

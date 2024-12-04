@@ -1,0 +1,32 @@
+meta {
+  name: Search
+  type: http
+  seq: 4
+}
+
+get {
+  url: https://api.spotify.com/v1/search?q=Discover Weekly&type=playlist
+  body: none
+  auth: inherit
+}
+
+params:query {
+  q: Discover Weekly
+  type: playlist
+}
+
+headers {
+  Authorization: Bearer {{access_token_set_by_collection_script}}
+}
+
+script:post-response {
+  if (res.body.next) {
+    bru.setVar("next_link", res.body.next);
+  }
+  
+  if (res.body.items) {
+    for (let item of res.body.items) {
+      
+    }
+  }
+}

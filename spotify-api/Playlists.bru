@@ -1,0 +1,32 @@
+meta {
+  name: Playlists
+  type: http
+  seq: 3
+}
+
+get {
+  url: https://api.spotify.com/v1/me/playlists?limit=50&offset=50
+  body: none
+  auth: inherit
+}
+
+params:query {
+  limit: 50
+  offset: 50
+}
+
+headers {
+  Authorization: Bearer {{access_token_set_by_collection_script}}
+}
+
+script:post-response {
+  if (res.body.next) {
+    bru.setVar("next_link", res.body.next);
+  }
+  
+  if (res.body.items) {
+    for (let item of res.body.items) {
+      
+    }
+  }
+}

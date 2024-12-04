@@ -1,11 +1,6 @@
 require('./-run-this-first')
 import { Spotify } from './spotify'
-import {
-  APIGatewayProxyHandler,
-  APIGatewayProxyEvent,
-  Handler,
-  APIGatewayProxyResult,
-} from 'aws-lambda'
+import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
 import { MagicPromoteAction } from './actions/magic-promote-action'
 import { performActions, Action } from './actions/action'
 import { AfterTrackActionAction } from './actions/track-action'
@@ -13,11 +8,7 @@ import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
 import { getDynamo } from './db/dynamo'
-import { AddTrackListenMutation } from './mutations/add-track-listen-mutation'
 import { ProcessPlaybackHistoryAction } from './actions/process-playback-history-action'
-import { userInfo } from 'os'
-import { AddPlaylistToInbox } from './actions/add-playlist-to-inbox'
-import { getTriageInfo } from './actions/actionable-type'
 import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
@@ -96,10 +87,10 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
   const spotify = await Spotify.get(dynamo)
 
-  let action: Action | (Action | null)[]
+  let actions: Action | (Action | null)[]
   switch (actionName) {
     case 'frequent-crawling':
-      action = [
+      actions = [
         new ArchiveAction(spotify),
         new ProcessPlaybackHistoryAction(spotify, dynamo.user),
         new ProcessManualTriage(spotify),
@@ -113,16 +104,16 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }
     case 'archive':
       const archive = new ArchiveAction(spotify)
-      action = archive
+      actions = archive
       break
     case 'promote':
-      action = [
+      actions = [
         doAfterCurrentTrack(spotify, ev),
         new MagicPromoteAction(spotify),
       ]
       break
     case 'demote':
-      action = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
+      actions = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
       break
     case 'handle-playlist':
       const playlistName = ev.queryStringParameters?.['playlist-name']
@@ -142,7 +133,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       if (!foo) {
         throw `no action for playlist ${playlistName}`
       }
-      action = foo
+      actions = foo
       break
     case 'handle-known-playlists':
       const playlistNames = [
@@ -152,7 +143,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         'California Girls [A]',
       ] as const
 
-      action = await Promise.all(
+      actions = await Promise.all(
         playlistNames.map(async (playlistName) => {
           const playlist = await spotify.playlist(playlistName)
 
@@ -166,20 +157,20 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       break
     case 'handle-playlists':
       const playlists = await spotify.allPlaylists()
-      action = playlists
+      actions = playlists
         .map((playlist) => actionForPlaylist(playlist, spotify))
         .filter(notEmpty)
 
       break
     case 'playback':
-      action = [
+      actions = [
         new ProcessPlaybackHistoryAction(spotify, dynamo.user),
         new ProcessManualTriage(spotify),
       ]
 
       break
     case 'auto-inbox':
-      action = [
+      actions = [
         new ProcessPlaybackHistoryAction(spotify, dynamo.user),
         new ScanPlaylistsForInbox(spotify),
       ]
@@ -194,7 +185,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   }
 
   try {
-    const result = await performActions(dynamo, spotify, action)
+    const result = await performActions(dynamo, spotify, actions)
     return {
       statusCode: 200,
       body: JSON.stringify({ result }),
