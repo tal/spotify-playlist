@@ -4,11 +4,17 @@ import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { Spotify, TrackForMove } from '../spotify'
 import { Action } from './action'
 import { EmptyPlaylistMutation } from '../mutations/empty-playlist-mutation'
+import { PlaylistTrack } from 'spotify-web-api-node'
 
 function getRandomSlice<T>(arr: T[], n: number): T[] {
   if (n > arr.length) return arr
   const start = Math.floor(Math.random() * (arr.length - n + 1))
   return arr.slice(start, start + n)
+}
+
+function getRandomElement<T>(arr: T[]): T {
+  const offset = Math.floor(Math.random() * arr.length)
+  return arr[offset]
 }
 
 export class RulePlaylistAction implements Action {
@@ -18,13 +24,20 @@ export class RulePlaylistAction implements Action {
 
   description?: (() => Promise<string>) | undefined
 
-  getID = async () => {
+  async getID() {
     return `${this.type}:${this.options.rule}`
   }
 
   forStorage = undefined
 
-  perform = async ({ dynamo }: { dynamo: Dynamo }) => {
+  async randomStarredArtistTracks(tracks: PlaylistTrack[]) {
+    const artistId = getRandomElement(tracks).track.artists[0].id
+    const savedTracks = await this.client.mySavedTracks()
+    return savedTracks.filter((track) => track.artists[0].id === artistId)
+  }
+
+  async perform({ dynamo }: { dynamo: Dynamo }) {
+    this.client.mySavedTracks() // Prime the cache
     const tracks = await this.client.tracksForPlaylist({ name: 'Starred' })
     const randomTracks = getRandomSlice(tracks, 40).map((track) => ({
       uri: track.track.uri,
@@ -37,13 +50,22 @@ export class RulePlaylistAction implements Action {
       },
     })
 
+    const likedTracks = await this.randomStarredArtistTracks(tracks)
+
+    const likedTracksMutation = new AddTrackMutation({
+      tracks: likedTracks,
+      playlist: {
+        id: '6Yr80pdznzQdnCExCsqTTb',
+      },
+    })
+
     return [
       [
         new EmptyPlaylistMutation({
           playlist: { id: '6Yr80pdznzQdnCExCsqTTb' },
         }),
       ],
-      [addTracksMutation],
+      [addTracksMutation, likedTracksMutation],
     ]
   }
 

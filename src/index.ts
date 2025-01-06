@@ -99,6 +99,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         new ProcessPlaybackHistoryAction(spotify, dynamo.user),
         new ProcessManualTriage(spotify),
         new ScanPlaylistsForInbox(spotify),
+        new RulePlaylistAction(spotify, { rule: 'smart' }),
       ]
       break
     case 'user':

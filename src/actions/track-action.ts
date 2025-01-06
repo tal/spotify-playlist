@@ -166,7 +166,7 @@ export abstract class TrackAction implements Action {
     }
   }
 
-  async promoteTrack() {
+  async promoteTrack(): Promise<Mutation<any>[][]> {
     const currentStateP = this.currentState()
     const promotedStateP = this.promotedState()
 
@@ -239,7 +239,7 @@ export abstract class TrackAction implements Action {
     return [mutations]
   }
 
-  async demoteTrack() {
+  async demoteTrack(): Promise<Mutation<any>[][]> {
     const { client } = this
     let currentTrack = await client.currentTrack
     if (!currentTrack) {
@@ -257,10 +257,12 @@ export abstract class TrackAction implements Action {
       currentlyPlayingPlaylist.id === starred?.id
     ) {
       return [
-        new RemoveTrackMutation({
-          playlist: currentlyPlayingPlaylist,
-          track: currentTrack,
-        }),
+        [
+          new RemoveTrackMutation({
+            playlist: currentlyPlayingPlaylist,
+            track: currentTrack,
+          }),
+        ],
       ]
     }
 
