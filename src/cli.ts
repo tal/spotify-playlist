@@ -89,6 +89,14 @@ const options = {
       action: 'demote',
     },
   },
+  'rule-playlist': {
+    pathParameters: {
+      action: 'rule-playlist',
+    },
+    queryStringParameters: {
+      rule: 'smart',
+    },
+  },
   demotes: {
     pathParameters: {
       action: 'demote',

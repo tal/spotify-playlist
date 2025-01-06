@@ -463,6 +463,16 @@ export class Spotify {
     return response.body
   }
 
+  @logError
+  async emptyPlaylist(playlistId: string) {
+    const tracks = await this.tracksForPlaylist({ id: playlistId })
+    const trackUris = tracks.map((track) => ({ uri: track.track.uri }))
+
+    if (trackUris.length > 0) {
+      await this.client.removeTracksFromPlaylist(playlistId, trackUris)
+    }
+  }
+
   async moveTracks(
     from: PlaylistID,
     to: PlaylistID,

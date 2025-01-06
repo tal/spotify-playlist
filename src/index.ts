@@ -12,6 +12,7 @@ import { ProcessPlaybackHistoryAction } from './actions/process-playback-history
 import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
+import { RulePlaylistAction } from './actions/rule-playlist'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -89,6 +90,9 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
 
   let actions: Action | (Action | null)[]
   switch (actionName) {
+    case 'rule-playlist':
+      actions = [new RulePlaylistAction(spotify, { rule: 'smart' })]
+      break
     case 'frequent-crawling':
       actions = [
         new ArchiveAction(spotify),
