@@ -249,8 +249,20 @@ export abstract class TrackAction implements Action {
     }
     if (!currentTrack) throw 'no track provided 3'
 
-    const { inbox, current } = await getTriageInfo(client)
-    const currentlyPlayingPlaylistP = client.currentlyPlayingPlaylist
+    const { inbox, current, starred } = await getTriageInfo(client)
+    const currentlyPlayingPlaylist = await client.currentlyPlayingPlaylist
+
+    if (
+      currentlyPlayingPlaylist &&
+      currentlyPlayingPlaylist.id === starred?.id
+    ) {
+      return [
+        new RemoveTrackMutation({
+          playlist: currentlyPlayingPlaylist,
+          track: currentTrack,
+        }),
+      ]
+    }
 
     const mutations: Mutation<any>[] = []
 
@@ -261,7 +273,6 @@ export abstract class TrackAction implements Action {
       new RemoveTrackMutation({ playlist: inbox, track: currentTrack }),
     )
 
-    const currentlyPlayingPlaylist = await currentlyPlayingPlaylistP
     if (
       currentlyPlayingPlaylist &&
       currentlyPlayingPlaylist.id !== current.id &&

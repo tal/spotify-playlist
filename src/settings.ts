@@ -36,6 +36,7 @@ export async function settings() {
       current: 'Current Test',
       releaseRadar: 'Release Radar',
       discoverWeekly: 'Discover Weekly',
+      starred: 'Starred',
       timeToArchive: 1 * days,
       archivePlaylistNameFor: buildMyFn('[Test]'),
     }
@@ -45,6 +46,7 @@ export async function settings() {
       current: 'Current',
       releaseRadar: 'Release Radar',
       discoverWeekly: 'Discover Weekly',
+      starred: 'Starred',
       timeToArchive: 30 * days,
       archivePlaylistNameFor: buildMyFn(),
     }

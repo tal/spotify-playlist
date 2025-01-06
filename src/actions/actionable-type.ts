@@ -14,12 +14,14 @@ export async function getTriageInfo(client: Spotify) {
   const currentP = client.playlist(settings.current)
   const releaseRadarP = client.optionalPlaylist(settings.releaseRadar)
   const discoverWeeklyP = client.optionalPlaylist(settings.discoverWeekly)
+  const starredP = client.optionalPlaylist(settings.starred)
 
   return {
     inbox: await inboxP,
     current: await currentP,
     releaseRadar: await releaseRadarP,
     discoverWeekly: await discoverWeeklyP,
+    starred: await starredP,
   }
 }
 

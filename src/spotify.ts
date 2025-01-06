@@ -149,7 +149,6 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
 import { delay } from './utils/delay'
-import { type } from 'os'
 
 const env = getEnv().then((env) => env.spotify)
 
