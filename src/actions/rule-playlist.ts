@@ -5,6 +5,7 @@ import { Spotify, TrackForMove } from '../spotify'
 import { Action } from './action'
 import { EmptyPlaylistMutation } from '../mutations/empty-playlist-mutation'
 import { PlaylistTrack } from 'spotify-web-api-node'
+import { getTriageInfo } from './actionable-type'
 
 function getRandomSlice<T>(arr: T[], n: number): T[] {
   if (n > arr.length) return arr
@@ -38,7 +39,13 @@ export class RulePlaylistAction implements Action {
 
   async perform({ dynamo }: { dynamo: Dynamo }) {
     this.client.mySavedTracks() // Prime the cache
-    const tracks = await this.client.tracksForPlaylist({ name: 'Starred' })
+    const { starred } = await getTriageInfo(this.client)
+    if (!starred) {
+      console.error('No starred playlist')
+      return []
+    }
+    const tracks = await this.client.tracksForPlaylist(starred)
+
     const randomTracks = getRandomSlice(tracks, 40).map((track) => ({
       uri: track.track.uri,
     }))

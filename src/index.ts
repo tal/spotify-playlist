@@ -58,12 +58,7 @@ export const instant: APIGatewayProxyHandler = async (ev) => {
 }
 
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
-  let actionName: string | null = null
-  if (ev.pathParameters && ev.pathParameters['action']) {
-    actionName = ev.pathParameters['action']
-  } else if (ev.queryStringParameters && ev.queryStringParameters['action']) {
-    actionName = ev.queryStringParameters['action']
-  }
+  let actionName: string | null = actionNameFromEvent(ev)
 
   if (!actionName) {
     return {
@@ -111,12 +106,16 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       const archive = new ArchiveAction(spotify)
       actions = archive
       break
+    case 'promotes':
+      actions = [new SkipToNextTrack(spotify), new MagicPromoteAction(spotify)]
     case 'promote':
       actions = [
         doAfterCurrentTrack(spotify, ev),
         new MagicPromoteAction(spotify),
       ]
       break
+    case 'demotes':
+      actions = [new SkipToNextTrack(spotify), new DemoteAction(spotify)]
     case 'demote':
       actions = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
       break
@@ -204,4 +203,14 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       error: JSON.stringify(err),
     }
   }
+}
+
+function actionNameFromEvent(ev: APIGatewayProxyEvent) {
+  let actionName: string | null = null
+  if (ev.pathParameters && ev.pathParameters['action']) {
+    actionName = ev.pathParameters['action']
+  } else if (ev.queryStringParameters && ev.queryStringParameters['action']) {
+    actionName = ev.queryStringParameters['action']
+  }
+  return actionName
 }
