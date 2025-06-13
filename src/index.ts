@@ -108,6 +108,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       break
     case 'promotes':
       actions = [new SkipToNextTrack(spotify), new MagicPromoteAction(spotify)]
+      break
     case 'promote':
       actions = [
         doAfterCurrentTrack(spotify, ev),
@@ -116,6 +117,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       break
     case 'demotes':
       actions = [new SkipToNextTrack(spotify), new DemoteAction(spotify)]
+      break
     case 'demote':
       actions = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
       break
@@ -183,7 +185,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       return {
         statusCode: 404,
         body: JSON.stringify({
-          error: 'no action name given',
+          error: `no action for ${actionName}`,
         }),
       }
   }
