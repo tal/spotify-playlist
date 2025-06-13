@@ -98,3 +98,28 @@ The codebase follows a two-layer architecture:
 - Actions can be tested locally with `--dryRun` flag before deployment
 - The system uses AWS X-Ray for distributed tracing in production
 - Settings are managed per-user in DynamoDB, not in config files
+
+## Changelog
+
+### 2025-01-06 - Dependency Updates and AWS SDK v3 Migration
+- Updated all npm dependencies to latest stable versions:
+  - TypeScript: 5.0.4 → 5.8.3
+  - @types/node: 20.2.3 → 22.10.6
+  - dotenv: 7.0 → 16.5.0
+  - node-notifier: 5.3.0 → 10.0.1
+  - aws-xray-sdk: 2.1.0 → 3.10.3
+  - aws-xray-sdk-core: 2.1.0 → 3.10.3
+  - prettier: 2.3.1 → 3.4.2
+  - lambda-local: 2.0.3 → 2.2.0
+  - Updated all @types packages to latest versions
+- **Major Migration: AWS SDK v2 to v3**
+  - Replaced `aws-sdk` with modular AWS SDK v3 packages:
+    - `@aws-sdk/client-dynamodb`: ^3.695.0
+    - `@aws-sdk/client-xray`: ^3.695.0
+    - `@aws-sdk/lib-dynamodb`: ^3.695.0
+  - Updated all DynamoDB operations to use v3 command pattern:
+    - Migrated from `.promise()` calls to `send(new Command())`
+    - Updated imports to use specific commands (QueryCommand, UpdateCommand, etc.)
+  - Updated X-Ray integration to use `captureAWSv3Client` for v3 compatibility
+  - Fixed TypeScript type issues related to optional TableName property
+- **Note on Spotify SDK**: spotify-web-api-node (5.0.2) hasn't been updated since 2020. Consider migrating to Spotify's official TypeScript SDK in future updates

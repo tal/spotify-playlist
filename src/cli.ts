@@ -148,6 +148,11 @@ const options = {
       action: 'auto-inbox',
     },
   },
+  user: {
+    pathParameters: {
+      action: 'user',
+    },
+  },
 }
 
 let action = process.argv[process.argv.length - 1]

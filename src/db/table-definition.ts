@@ -1,19 +1,25 @@
 import * as fs from 'fs'
 import { promisify } from 'util'
-import { CreateTableInput } from 'aws-sdk/clients/dynamodb'
+import { 
+  CreateTableCommand,
+  CreateTableCommandInput,
+  ListTablesCommand,
+  DeleteTableCommand,
+  DescribeTableCommand
+} from '@aws-sdk/client-dynamodb'
 import { AWS } from '../aws'
 
 const TABLE_DIR = __dirname + '/../../config/dynamo-tables/'
 
-function getDataFromFile(path: string): Promise<CreateTableInput> {
+function getDataFromFile(path: string): Promise<CreateTableCommandInput> {
   return promisify(fs.readFile)(path, 'utf8').then((text) => {
-    const data: CreateTableInput = JSON.parse(text)
+    const data: CreateTableCommandInput = JSON.parse(text)
     return data
   })
 }
 
 function getTableDefinitions() {
-  return new Promise<Promise<CreateTableInput>[]>((succ, rej) => {
+  return new Promise<Promise<CreateTableCommandInput>[]>((succ, rej) => {
     fs.readdir(TABLE_DIR, (err, items) => {
       if (err) {
         rej(err)
@@ -30,11 +36,8 @@ function getTableDefinitions() {
 let tablesPromise: Promise<string[]> | undefined
 async function createdTables() {
   if (!tablesPromise) {
-    const dynamo = await AWS.dynamo
-
-    tablesPromise = dynamo
-      .listTables()
-      .promise()
+    tablesPromise = AWS.dynamo
+      .send(new ListTablesCommand({}))
       .then((data) => data.TableNames)
       .then((names) => {
         if (!names) throw 'no tables found'
@@ -53,10 +56,9 @@ async function tableCreated(table: string) {
 
 export async function deleteAllTables() {
   const tables = await createdTables()
-  const dynamo = await AWS.dynamo
 
   for (let TableName of tables) {
-    await dynamo.deleteTable({ TableName }).promise()
+    await AWS.dynamo.send(new DeleteTableCommand({ TableName }))
   }
 }
 
@@ -68,9 +70,12 @@ export async function ensuareAllTablesCreated() {
 }
 
 export class TableDefinition {
-  constructor(public params: CreateTableInput) {}
+  constructor(public params: CreateTableCommandInput) {}
 
   get name() {
+    if (!this.params.TableName) {
+      throw new Error('TableName is required')
+    }
     return this.params.TableName
   }
 
@@ -79,20 +84,15 @@ export class TableDefinition {
 
     if (alreadyCreated) return
 
-    const dynamo = await AWS.dynamo
-
-    return dynamo.createTable(this.params).promise()
+    return AWS.dynamo.send(new CreateTableCommand(this.params))
   }
 
   async delete() {
-    const dynamo = await AWS.dynamo
-    return dynamo.deleteTable({ TableName: this.name }).promise()
+    return AWS.dynamo.send(new DeleteTableCommand({ TableName: this.name }))
   }
 
   async describe() {
-    const dynamo = await AWS.dynamo
-
-    const resp = await dynamo.describeTable({ TableName: this.name }).promise()
+    const resp = await AWS.dynamo.send(new DescribeTableCommand({ TableName: this.name }))
     return resp.Table
   }
 

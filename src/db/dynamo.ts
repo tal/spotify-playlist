@@ -1,5 +1,16 @@
 import { chunk } from 'lodash'
-import { DocumentClient } from 'aws-sdk/clients/dynamodb'
+import { 
+  QueryCommand,
+  UpdateCommand,
+  GetCommand,
+  BatchGetCommand,
+  PutCommand,
+  QueryCommandInput,
+  UpdateCommandInput,
+  GetCommandInput,
+  BatchGetCommandInput,
+  PutCommandInput
+} from '@aws-sdk/lib-dynamodb'
 import { AWS } from '../aws'
 
 export class Dynamo {
@@ -10,18 +21,17 @@ export class Dynamo {
   }
 
   async getActionHistory(id: string, since: number) {
-    const docs = await AWS.docs
-    const resp = await docs
-      .query({
-        TableName: 'action_history',
-        KeyConditionExpression: 'id = :id AND created_at > :limit',
-        ExpressionAttributeValues: {
-          ':id': this.gId(id),
-          ':limit': since,
-        },
-        Limit: 1,
-      })
-      .promise()
+    const params: QueryCommandInput = {
+      TableName: 'action_history',
+      KeyConditionExpression: 'id = :id AND created_at > :limit',
+      ExpressionAttributeValues: {
+        ':id': this.gId(id),
+        ':limit': since,
+      },
+      Limit: 1,
+    }
+
+    const resp = await AWS.docs.send(new QueryCommand(params))
 
     if (resp.Items) {
       return resp.Items[0] as ActionHistoryItemData | undefined
@@ -36,7 +46,7 @@ export class Dynamo {
   ) {
     const id = this.gId(trackId)
 
-    const params: DocumentClient.UpdateItemInput = {
+    const params: UpdateCommandInput = {
       TableName: 'track',
       Key: {
         id,
@@ -53,8 +63,7 @@ export class Dynamo {
       ReturnValues: 'ALL_NEW',
     }
 
-    const docs = await AWS.docs
-    const response = await docs.update(params).promise()
+    const response = await AWS.docs.send(new UpdateCommand(params))
 
     if (response.Attributes) {
       return response.Attributes
@@ -69,7 +78,7 @@ export class Dynamo {
   ) {
     const id = this.gId(trackId)
 
-    const ExpressionAttributeValues: DocumentClient.UpdateItemInput['ExpressionAttributeValues'] =
+    const ExpressionAttributeValues: UpdateCommandInput['ExpressionAttributeValues'] =
       {}
 
     const expressionParts = []
@@ -98,7 +107,7 @@ export class Dynamo {
       ExpressionAttributeValues[':app_actions'] = triageActions
     }
 
-    const params: DocumentClient.UpdateItemInput = {
+    const params: UpdateCommandInput = {
       TableName: 'track',
       Key: {
         id,
@@ -112,8 +121,7 @@ export class Dynamo {
       throw `Must have at least one action given`
     }
 
-    const docs = await AWS.docs
-    const response = await docs.update(params).promise()
+    const response = await AWS.docs.send(new UpdateCommand(params))
 
     if (response.Attributes) {
       return response.Attributes
@@ -128,15 +136,14 @@ export class Dynamo {
     const chunked = chunk(ids, 100)
     for (let ids of chunked) {
       const Keys = ids.map((id) => ({ id: this.gId(id) }))
-      const response = await AWS.docs
-        .batchGet({
-          RequestItems: {
-            track: {
-              Keys,
-            },
+      const params: BatchGetCommandInput = {
+        RequestItems: {
+          track: {
+            Keys,
           },
-        })
-        .promise()
+        },
+      }
+      const response = await AWS.docs.send(new BatchGetCommand(params))
 
       if (response.Responses) {
         const tracks = response.Responses.track as TrackItem[]
@@ -156,16 +163,14 @@ export class Dynamo {
   }
 
   async getSeenTracks(ids: string[]) {
-    const docs = await AWS.docs
     const responses = await Promise.all(
       ids.map(async (id) => {
         const key = this.gId(id)
-        const resp = await docs
-          .get({
-            TableName: 'track',
-            Key: { id: key },
-          })
-          .promise()
+        const params: GetCommandInput = {
+          TableName: 'track',
+          Key: { id: key },
+        }
+        const resp = await AWS.docs.send(new GetCommand(params))
 
         return { id, item: resp.Item }
       }),
@@ -174,7 +179,7 @@ export class Dynamo {
     const result: {
       [k: string]:
         | { id: string; found: false }
-        | { id: string; found: true; item: DocumentClient.AttributeMap }
+        | { id: string; found: true; item: Record<string, any> }
     } = {}
 
     for (let id of ids) {
@@ -191,7 +196,7 @@ export class Dynamo {
   }
 
   async updateAccessToken(id: string, token: string, expiresAt: number) {
-    var params: DocumentClient.UpdateItemInput = {
+    var params: UpdateCommandInput = {
       TableName: 'user',
       Key: { id },
       UpdateExpression:
@@ -203,8 +208,7 @@ export class Dynamo {
       ReturnValues: 'ALL_NEW',
     }
 
-    const docs = await AWS.docs
-    const response = await docs.update(params).promise()
+    const response = await AWS.docs.send(new UpdateCommand(params))
 
     if (response.Attributes) {
       return response.Attributes as UserData
@@ -214,7 +218,7 @@ export class Dynamo {
   }
 
   async updateLastPlayedAtProcessedTimestamp(id: string, ts: number) {
-    var params: DocumentClient.UpdateItemInput = {
+    var params: UpdateCommandInput = {
       TableName: 'user',
       Key: { id },
       UpdateExpression: 'set lastPlayedAtProcessedTimestamp = :ts',
@@ -224,8 +228,7 @@ export class Dynamo {
       ReturnValues: 'ALL_NEW',
     }
 
-    const docs = await AWS.docs
-    const response = await docs.update(params).promise()
+    const response = await AWS.docs.send(new UpdateCommand(params))
 
     if (response.Attributes) {
       return response.Attributes as UserData
@@ -235,20 +238,18 @@ export class Dynamo {
   }
 
   async putActionHistory(history: ActionHistoryItemData) {
-    const docs = await AWS.docs
-
-    const params = {
+    const params: PutCommandInput = {
       TableName: 'action_history',
       Item: { ...history, id: this.gId(history.id) },
     }
 
-    await docs.put(params).promise()
+    await AWS.docs.send(new PutCommand(params))
 
     return history
   }
 
   async putUser(user: UserData) {
-    var params = {
+    var params: PutCommandInput = {
       TableName: 'user',
       Item: {
         id: user.id,
@@ -259,8 +260,7 @@ export class Dynamo {
         },
       },
     }
-    const docs = await AWS.docs
-    await docs.put(params).promise()
+    await AWS.docs.send(new PutCommand(params))
 
     return user
   }
@@ -273,10 +273,11 @@ export type UpdateTrackParams = {
 }
 
 async function getUser(userName: string) {
-  const docs = await AWS.docs
-  const resp = await docs
-    .get({ TableName: 'user', Key: { id: userName } })
-    .promise()
+  const params: GetCommandInput = {
+    TableName: 'user',
+    Key: { id: userName }
+  }
+  const resp = await AWS.docs.send(new GetCommand(params))
 
   return resp.Item as UserData | undefined
 }
