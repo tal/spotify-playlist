@@ -5,3 +5,6 @@ index.zip
 stderr.log
 stdout.log
 .aider*
+
+**.local*
+tsconfig.tsbuildinfo

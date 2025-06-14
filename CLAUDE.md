@@ -101,6 +101,17 @@ The codebase follows a two-layer architecture:
 
 ## Changelog
 
+### 2025-01-06 - Progressive Backoff for Spotify API Calls
+- Added retry utility with exponential backoff to handle timeouts and rate limits
+- Updated `mySavedTracks` method to use progressive backoff strategy:
+  - Initial delay: 2 seconds (configurable via SPOTIFY_RETRY_INITIAL_DELAY)
+  - Max delay: 2 minutes (configurable via SPOTIFY_RETRY_MAX_DELAY)
+  - Backoff multiplier: 2.5x (configurable via SPOTIFY_RETRY_BACKOFF_MULTIPLIER)
+  - Max retries: 5 (configurable via SPOTIFY_RETRY_MAX_RETRIES)
+- Automatic detection and handling of Spotify's retry-after headers
+- Better logging for retry attempts with clear indication of timeout vs rate limit issues
+- Configuration can be overridden via environment variables for different deployment scenarios
+
 ### 2025-01-06 - Dependency Updates and AWS SDK v3 Migration
 - Updated all npm dependencies to latest stable versions:
   - TypeScript: 5.0.4 → 5.8.3

@@ -149,6 +149,8 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
 import { delay } from './utils/delay'
+import { retrySpotifyCall } from './utils/retry'
+import { getSpotifyRetryConfig } from './utils/spotify-retry-config'
 
 const env = getEnv().then((env) => env.spotify)
 
@@ -192,6 +194,8 @@ async function getClient(dynamo: Dynamo) {
 }
 
 export class Spotify {
+  private retryConfig = getSpotifyRetryConfig()
+  
   static async get(dynamo: Dynamo) {
     const client = await getClient(dynamo)
 
@@ -501,42 +505,36 @@ export class Spotify {
 
     // Did an async function call because going straight to a promise felt like a pita
     const run = async () => {
-      let response = await this.client.getMySavedTracks({ limit: 50 })
+      // Fetch first page with retry logic
+      let response = await retrySpotifyCall(
+        () => this.client.getMySavedTracks({ limit: 50 }),
+        'mySavedTracks (initial)',
+        this.retryConfig.savedTracks
+      )
+      
       let items = response.body.items.map((st) => st.track)
-
-      let i = 1
+      let pageNumber = 1
 
       while (response.body.next) {
-        try {
-          const offset = response.body.limit + response.body.offset
+        const offset = response.body.limit + response.body.offset
+        pageNumber += 1
 
-          console.log(`🛫 mySavedTracks page ${i} offset:${offset}`)
+        console.log(`🛫 mySavedTracks page ${pageNumber} offset:${offset}`)
 
-          response = await this.client.getMySavedTracks({
+        // Fetch subsequent pages with retry logic
+        response = await retrySpotifyCall(
+          () => this.client.getMySavedTracks({
             limit: response.body.limit,
             offset,
-          })
+          }),
+          `mySavedTracks (page ${pageNumber})`,
+          this.retryConfig.savedTracks
+        )
 
-          i += 1
-
-          items = [...items, ...response.body.items.map((st) => st.track)]
-        } catch (error: any) {
-          console.error(error)
-          const retryAfterStr: string | undefined =
-            error.response?.headers?.['retry-after'] ??
-            error.headers?.['retry-after']
-
-          if (retryAfterStr) {
-            const retryAfter = parseInt(retryAfterStr, 10)
-            const delayFor = retryAfter * 1000 + 100
-            console.log(`⏲ mySavedTracks delaying page ${i} for ${delayFor}ms`)
-            await delay(delayFor)
-            continue
-          } else {
-            throw error
-          }
-        }
+        items = [...items, ...response.body.items.map((st) => st.track)]
       }
+      
+      console.log(`✅ mySavedTracks completed: ${items.length} tracks loaded`)
       return items
     }
 
