@@ -239,9 +239,15 @@ export class Spotify {
   async optionalPlaylist(named: string) {
     const playlists = await this.allPlaylists()
 
-    console.log(named, playlists)
+    console.log(`[optionalPlaylist] Searching for "${named}" among ${playlists.length} playlists`)
 
     const playlist = playlists.find((p) => p?.name === named)
+    
+    if (playlist) {
+      console.log(`[optionalPlaylist] Found playlist "${named}" with id: ${playlist.id}`)
+    } else {
+      console.log(`[optionalPlaylist] Playlist "${named}" not found in cache`)
+    }
 
     return playlist
   }
@@ -256,18 +262,32 @@ export class Spotify {
 
   @logError
   private async createPlaylist(named: string) {
+    console.log(`[createPlaylist] Creating new playlist: "${named}"`)
+    
     const result = await this.client.createPlaylist(named)
+    
+    console.log(`[createPlaylist] Successfully created playlist "${named}" with id: ${result.body.id}`)
+    
+    // Reset the cache so the new playlist will be found next time
     ;(this.allPlaylists as any).reset()
 
     return result.body
   }
 
-  async getOrCreatePlaylist(named: string) {
+  async getOrCreatePlaylist(named: string, forceRefresh = false) {
+    // If forceRefresh is true, clear the playlist cache before checking
+    if (forceRefresh) {
+      console.log(`[getOrCreatePlaylist] Force refreshing playlist cache before checking for: ${named}`)
+      ;(this.allPlaylists as any).reset()
+    }
+    
     let playlist = await this.optionalPlaylist(named)
     if (playlist) {
+      console.log(`[getOrCreatePlaylist] Found existing playlist: ${named} (id: ${playlist.id})`)
       return playlist
     }
 
+    console.log(`[getOrCreatePlaylist] Creating new playlist: ${named}`)
     return this.createPlaylist(named)
   }
 

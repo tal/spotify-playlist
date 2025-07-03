@@ -112,6 +112,16 @@ The codebase follows a two-layer architecture:
 - Better logging for retry attempts with clear indication of timeout vs rate limit issues
 - Configuration can be overridden via environment variables for different deployment scenarios
 
+### 2025-01-06 - Fix Duplicate Archive Playlist Creation
+- Identified issue with archive playlists being created multiple times for the same month
+- Root cause: Playlist cache was not being refreshed between Lambda invocations, causing the system to not find existing archive playlists
+- Solution implemented:
+  - Modified `getOrCreatePlaylist()` in src/spotify.ts to accept optional `forceRefresh` parameter
+  - When `forceRefresh` is true, the playlist cache is cleared before checking for existing playlists
+  - Updated `ArchiveAction` in src/actions/archive-action.ts to use `forceRefresh: true` when creating archive playlists
+  - Added detailed logging throughout the playlist creation flow to track when playlists are found vs created
+- This ensures that archive playlists are properly deduplicated even across different Lambda instances
+
 ### 2025-01-06 - Dependency Updates and AWS SDK v3 Migration
 - Updated all npm dependencies to latest stable versions:
   - TypeScript: 5.0.4 → 5.8.3
