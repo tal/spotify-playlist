@@ -41,7 +41,9 @@ export class ArchiveAction implements Action {
     const tracks = await client.tracksForPlaylist(currentPlaylist)
     const mutations: MoveTrackMutation[] = []
 
-    console.log(`[ArchiveAction] Processing ${tracks.length} tracks from ${currentPlaylist.name} for archiving`)
+    console.log(
+      `[ArchiveAction] Processing ${tracks.length} tracks from ${currentPlaylist.name} for archiving`,
+    )
 
     const foo: { [k: string]: TrackForMove[] } = {}
 
@@ -53,7 +55,7 @@ export class ArchiveAction implements Action {
         // Force refresh playlist cache to prevent duplicate archive playlists
         const targetPlaylist = await client.getOrCreatePlaylist(
           targetPlaylistName,
-          true // forceRefresh = true
+          true, // forceRefresh = true
         )
 
         if (!foo[targetPlaylist.id]) {

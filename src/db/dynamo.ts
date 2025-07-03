@@ -1,5 +1,5 @@
 import { chunk } from 'lodash'
-import { 
+import {
   QueryCommand,
   UpdateCommand,
   GetCommand,
@@ -9,7 +9,7 @@ import {
   UpdateCommandInput,
   GetCommandInput,
   BatchGetCommandInput,
-  PutCommandInput
+  PutCommandInput,
 } from '@aws-sdk/lib-dynamodb'
 import { AWS } from '../aws'
 
@@ -275,7 +275,7 @@ export type UpdateTrackParams = {
 async function getUser(userName: string) {
   const params: GetCommandInput = {
     TableName: 'user',
-    Key: { id: userName }
+    Key: { id: userName },
   }
   const resp = await AWS.docs.send(new GetCommand(params))
 

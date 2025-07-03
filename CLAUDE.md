@@ -102,6 +102,7 @@ The codebase follows a two-layer architecture:
 ## Changelog
 
 ### 2025-01-06 - Progressive Backoff for Spotify API Calls
+
 - Added retry utility with exponential backoff to handle timeouts and rate limits
 - Updated `mySavedTracks` method to use progressive backoff strategy:
   - Initial delay: 2 seconds (configurable via SPOTIFY_RETRY_INITIAL_DELAY)
@@ -112,7 +113,17 @@ The codebase follows a two-layer architecture:
 - Better logging for retry attempts with clear indication of timeout vs rate limit issues
 - Configuration can be overridden via environment variables for different deployment scenarios
 
+### 2025-01-06 - TypeScript Decorator Typing Investigation
+
+- Investigated multiple approaches for properly typing methods augmented by decorators
+- Explored TypeScript patterns including interface augmentation, declaration merging, and type helpers
+- Discovered that TypeScript's experimental decorator support doesn't handle method signature modifications well
+- Kept the pragmatic `(this.allPlaylists as any).reset()` approach as it's the clearest solution
+- Fixed TypeScript compilation errors by adding missing semicolons after console.log statements
+- Added explanatory comments where decorator-enhanced methods are used
+
 ### 2025-01-06 - Fix Duplicate Archive Playlist Creation
+
 - Identified issue with archive playlists being created multiple times for the same month
 - Root cause: Playlist cache was not being refreshed between Lambda invocations, causing the system to not find existing archive playlists
 - Solution implemented:
@@ -123,6 +134,7 @@ The codebase follows a two-layer architecture:
 - This ensures that archive playlists are properly deduplicated even across different Lambda instances
 
 ### 2025-01-06 - Dependency Updates and AWS SDK v3 Migration
+
 - Updated all npm dependencies to latest stable versions:
   - TypeScript: 5.0.4 → 5.8.3
   - @types/node: 20.2.3 → 22.10.6

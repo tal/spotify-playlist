@@ -1,11 +1,11 @@
 import * as fs from 'fs'
 import { promisify } from 'util'
-import { 
+import {
   CreateTableCommand,
   CreateTableCommandInput,
   ListTablesCommand,
   DeleteTableCommand,
-  DescribeTableCommand
+  DescribeTableCommand,
 } from '@aws-sdk/client-dynamodb'
 import { AWS } from '../aws'
 
@@ -92,7 +92,9 @@ export class TableDefinition {
   }
 
   async describe() {
-    const resp = await AWS.dynamo.send(new DescribeTableCommand({ TableName: this.name }))
+    const resp = await AWS.dynamo.send(
+      new DescribeTableCommand({ TableName: this.name }),
+    )
     return resp.Table
   }
 

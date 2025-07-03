@@ -1,1 +1,1 @@
-module.exports = {few: 'yes'}
+module.exports = { few: 'yes' }

@@ -1,4 +1,4 @@
-import { run as runScript} from '../../scripts/run'
+import { run as runScript } from '../../scripts/run'
 import { getAPI } from '../spotify-api'
 
 import { extractTrackId } from './track'

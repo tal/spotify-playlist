@@ -21,7 +21,10 @@ function getRandomElement<T>(arr: T[]): T {
 export class RulePlaylistAction implements Action {
   type: string = 'rule-playlist'
 
-  constructor(readonly client: Spotify, readonly options: { rule: string }) {}
+  constructor(
+    readonly client: Spotify,
+    readonly options: { rule: string },
+  ) {}
 
   description?: (() => Promise<string>) | undefined
 

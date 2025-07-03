@@ -5,9 +5,10 @@ var path = require('path')
 function run(name) {
   var scriptPath = path.resolve(__dirname, '../scripts', name + '.scpt')
 
-  return applescript.execFileAsync(scriptPath)
-    .then(resp => JSON.parse(resp))
-    .then(data => {
+  return applescript
+    .execFileAsync(scriptPath)
+    .then((resp) => JSON.parse(resp))
+    .then((data) => {
       if (data.error) {
         throw data.error
       } else {
@@ -17,5 +18,5 @@ function run(name) {
 }
 
 module.exports = {
-  run: run
+  run: run,
 }

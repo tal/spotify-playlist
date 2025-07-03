@@ -1,17 +1,17 @@
-import { run as runScript} from '../../scripts/run'
+import { run as runScript } from '../../scripts/run'
 import { getAPI } from '../spotify-api'
 
 export function extractTrackId(id) {
   const [, type, foundId] = id.match(/^spotify:(\w+?):(.+)$/)
 
   if (foundId) {
-    id = (type === 'track') ? foundId : null
+    id = type === 'track' ? foundId : null
   }
 
   return id
 }
 
-export async function getTrack({id}) {
+export async function getTrack({ id }) {
   id = extractTrackId(id)
 
   const spotifyAPI = await getAPI()

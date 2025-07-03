@@ -32,11 +32,11 @@ function groupArrayBy<T>(array: T[], count: number): T[][] {
   return grouped
 }
 
-function asyncMemoize<T>(
-  target: T,
+function asyncMemoize(
+  target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor,
-) {
+): PropertyDescriptor {
   const { value, get } = descriptor
 
   const memkey = `__mem_${propertyKey}`
@@ -88,6 +88,8 @@ function asyncMemoize<T>(
       return promise
     }
   }
+
+  return descriptor
 }
 
 function logError<T>(
@@ -195,7 +197,7 @@ async function getClient(dynamo: Dynamo) {
 
 export class Spotify {
   private retryConfig = getSpotifyRetryConfig()
-  
+
   static async get(dynamo: Dynamo) {
     const client = await getClient(dynamo)
 
@@ -239,12 +241,16 @@ export class Spotify {
   async optionalPlaylist(named: string) {
     const playlists = await this.allPlaylists()
 
-    console.log(`[optionalPlaylist] Searching for "${named}" among ${playlists.length} playlists`)
+    console.log(
+      `[optionalPlaylist] Searching for "${named}" among ${playlists.length} playlists`,
+    )
 
     const playlist = playlists.find((p) => p?.name === named)
-    
+
     if (playlist) {
-      console.log(`[optionalPlaylist] Found playlist "${named}" with id: ${playlist.id}`)
+      console.log(
+        `[optionalPlaylist] Found playlist "${named}" with id: ${playlist.id}`,
+      )
     } else {
       console.log(`[optionalPlaylist] Playlist "${named}" not found in cache`)
     }
@@ -263,11 +269,13 @@ export class Spotify {
   @logError
   private async createPlaylist(named: string) {
     console.log(`[createPlaylist] Creating new playlist: "${named}"`)
-    
+
     const result = await this.client.createPlaylist(named)
-    
-    console.log(`[createPlaylist] Successfully created playlist "${named}" with id: ${result.body.id}`)
-    
+
+    console.log(
+      `[createPlaylist] Successfully created playlist "${named}" with id: ${result.body.id}`,
+    )
+
     // Reset the cache so the new playlist will be found next time
     ;(this.allPlaylists as any).reset()
 
@@ -277,13 +285,17 @@ export class Spotify {
   async getOrCreatePlaylist(named: string, forceRefresh = false) {
     // If forceRefresh is true, clear the playlist cache before checking
     if (forceRefresh) {
-      console.log(`[getOrCreatePlaylist] Force refreshing playlist cache before checking for: ${named}`)
+      console.log(
+        `[getOrCreatePlaylist] Force refreshing playlist cache before checking for: ${named}`,
+      )
       ;(this.allPlaylists as any).reset()
     }
-    
+
     let playlist = await this.optionalPlaylist(named)
     if (playlist) {
-      console.log(`[getOrCreatePlaylist] Found existing playlist: ${named} (id: ${playlist.id})`)
+      console.log(
+        `[getOrCreatePlaylist] Found existing playlist: ${named} (id: ${playlist.id})`,
+      )
       return playlist
     }
 
@@ -529,9 +541,9 @@ export class Spotify {
       let response = await retrySpotifyCall(
         () => this.client.getMySavedTracks({ limit: 50 }),
         'mySavedTracks (initial)',
-        this.retryConfig.savedTracks
+        this.retryConfig.savedTracks,
       )
-      
+
       let items = response.body.items.map((st) => st.track)
       let pageNumber = 1
 
@@ -543,17 +555,18 @@ export class Spotify {
 
         // Fetch subsequent pages with retry logic
         response = await retrySpotifyCall(
-          () => this.client.getMySavedTracks({
-            limit: response.body.limit,
-            offset,
-          }),
+          () =>
+            this.client.getMySavedTracks({
+              limit: response.body.limit,
+              offset,
+            }),
           `mySavedTracks (page ${pageNumber})`,
-          this.retryConfig.savedTracks
+          this.retryConfig.savedTracks,
         )
 
         items = [...items, ...response.body.items.map((st) => st.track)]
       }
-      
+
       console.log(`✅ mySavedTracks completed: ${items.length} tracks loaded`)
       return items
     }

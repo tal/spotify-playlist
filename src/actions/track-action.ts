@@ -89,7 +89,10 @@ export abstract class TrackAction implements Action {
   public created_at: number
   abstract type: string
 
-  constructor(private client: Spotify, { trackID }: { trackID?: string } = {}) {
+  constructor(
+    private client: Spotify,
+    { trackID }: { trackID?: string } = {},
+  ) {
     this.trackID = trackID
     this.created_at = new Date().getTime()
   }
@@ -243,6 +246,7 @@ export abstract class TrackAction implements Action {
     const { client } = this
     let currentTrack = await client.currentTrack
     if (!currentTrack) {
+      // The player property is memoized with a reset() method added by decorator
       ;(client.player as any).reset()
       await delay(85)
       currentTrack = await client.currentTrack

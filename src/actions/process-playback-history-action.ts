@@ -9,7 +9,10 @@ export class ProcessPlaybackHistoryAction implements Action {
   readonly created_at: number
   readonly type: string = 'process-playback-history'
 
-  constructor(private client: Spotify, private user: UserData) {
+  constructor(
+    private client: Spotify,
+    private user: UserData,
+  ) {
     this.created_at = new Date().getTime()
   }
 
