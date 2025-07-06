@@ -24,4 +24,8 @@ export class DemoteAction extends TrackAction implements Action {
   perform() {
     return this.demoteTrack()
   }
+
+  undo(): Promise<Mutation<any>[][]> {
+    return this.promoteTrack()
+  }
 }

@@ -101,6 +101,25 @@ The codebase follows a two-layer architecture:
 
 ## Changelog
 
+### 2025-07-03 - Implement Undo Functionality for Promote/Demote Actions
+
+- Added undo support for track triage operations (promote and demote):
+  - Added `undo()` method to `DemoteAction` class that calls `promoteTrack()` to reverse the demotion
+  - Created new `UndoAction` class that retrieves previous actions from history and executes their undo methods
+  - Supports undoing by specific action ID or finding the most recent promote/demote action
+  - Configurable lookback window (defaults to 5 minutes for recent actions, 24 hours for specific IDs)
+- Enhanced DynamoDB integration for undo support:
+  - Added `getRecentActionsOfType()` to query recent actions by type with filtering for undone actions
+  - Added `markActionAsUndone()` to track which actions have been undone
+  - Extended `ActionHistoryItemData` type with `undone`, `undone_at`, and `originalActionId` fields
+- Added Lambda handler routes:
+  - `/undo` - Undo a specific action with optional `action-id` and `action-type` query parameters
+  - `/undo-last` - Undo the most recent promote or demote action
+- Extended CLI with new commands:
+  - `yarn cli undo` - Undo operations via CLI
+  - `yarn cli undo-last` - Undo the most recent action
+- Note: Currently requires a DynamoDB GSI named 'user-action-index' for the `getRecentActionsOfType` query to work properly
+
 ### 2025-01-06 - Progressive Backoff for Spotify API Calls
 
 - Added retry utility with exponential backoff to handle timeouts and rate limits

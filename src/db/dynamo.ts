@@ -40,6 +40,45 @@ export class Dynamo {
     }
   }
 
+  async getRecentActionsOfType(actionType: string, since: number, limit: number = 10) {
+    // Use Scan with filter since we can't query by partial partition key
+    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb')
+    
+    const params = {
+      TableName: 'action_history',
+      FilterExpression: 'begins_with(id, :prefix) AND created_at > :since AND attribute_not_exists(undone)',
+      ExpressionAttributeValues: {
+        ':prefix': `${this.user.id}:${actionType}:`,
+        ':since': since,
+      },
+      Limit: limit * 10, // Request more items since we're filtering
+    }
+
+    const resp = await AWS.docs.send(new ScanCommand(params))
+    
+    // Sort by created_at descending and limit results
+    const items = (resp.Items || []) as ActionHistoryItemData[]
+    return items
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, limit)
+  }
+
+  async markActionAsUndone(actionId: string) {
+    const params: UpdateCommandInput = {
+      TableName: 'action_history',
+      Key: {
+        id: this.gId(actionId),
+      },
+      UpdateExpression: 'SET undone = :true, undone_at = :timestamp',
+      ExpressionAttributeValues: {
+        ':true': true,
+        ':timestamp': new Date().getTime(),
+      },
+    }
+
+    await AWS.docs.send(new UpdateCommand(params))
+  }
+
   async addTrackTriageAction(
     { id: trackId }: { id: string },
     action: TrackTriageAction,
@@ -240,7 +279,11 @@ export class Dynamo {
   async putActionHistory(history: ActionHistoryItemData) {
     const params: PutCommandInput = {
       TableName: 'action_history',
-      Item: { ...history, id: this.gId(history.id) },
+      Item: { 
+        ...history, 
+        id: this.gId(history.id),
+        userId: this.user.id // Add userId for GSI queries
+      },
     }
 
     await AWS.docs.send(new PutCommand(params))

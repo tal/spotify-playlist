@@ -14,6 +14,9 @@ declare interface ActionHistoryItemData {
   action: ActionTypes
   mutations: any[]
   ttl?: number
+  undone?: boolean
+  undone_at?: number
+  originalActionId?: string
 }
 
 declare interface BasicTrackData {

@@ -153,6 +153,18 @@ const options = {
       action: 'user',
     },
   },
+  undo: {
+    pathParameters: {
+      action: 'undo',
+    },
+    queryStringParameters: {},
+  },
+  'undo-last': {
+    pathParameters: {
+      action: 'undo-last',
+    },
+    queryStringParameters: {},
+  },
 }
 
 let action = process.argv[process.argv.length - 1]

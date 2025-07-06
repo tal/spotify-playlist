@@ -13,6 +13,7 @@ import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { RulePlaylistAction } from './actions/rule-playlist'
+import { UndoAction } from './actions/undo-action'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -120,6 +121,14 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       break
     case 'demote':
       actions = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
+      break
+    case 'undo':
+      const actionId = ev.queryStringParameters?.['action-id']
+      const actionType = ev.queryStringParameters?.['action-type'] as 'promote' | 'demote' | undefined
+      actions = new UndoAction(spotify, dynamo, { actionId, actionType })
+      break
+    case 'undo-last':
+      actions = new UndoAction(spotify, dynamo)
       break
     case 'handle-playlist':
       const playlistName = ev.queryStringParameters?.['playlist-name']
