@@ -14,14 +14,31 @@ This is a Spotify playlist management automation system that runs as an AWS Lamb
 # Compile TypeScript to JavaScript
 npx tsc
 
-# Run the CLI locally
-yarn cli
+# Build for production (compiles TypeScript and builds web frontend)
+npm run build
+
+# Run the CLI locally (Node.js - requires compilation first)
+yarn cli <action-name>
+
+# Run the CLI with Bun (no compilation needed)
+yarn cli:bun <action-name>
+
+# Start local API server with Bun
+yarn cli:bun:server
 ```
 
 ### Web Frontend Development
 
 ```bash
-# Start the React development server (uses Bun and Vite)
+# Start both API server and web dev server concurrently
+npm run dev
+
+# Or start them separately:
+# Start the local API server (port 3001)
+npm run dev:api
+
+# Start the React development server (uses Bun and Vite, port 5173)
+npm run dev:web
 cd web && bun run dev
 
 # Build the React app for production
@@ -41,11 +58,20 @@ ruby scripts/publish.rb
 ### Local Development
 
 ```bash
-# Start local DynamoDB (required for local development)
+# Start local DynamoDB (required for local development with NODE_ENV=development)
 java -Djava.library.path=./dynamodb_local_latest/DynamoDBLocal_lib -jar dynamodb_local_latest/DynamoDBLocal.jar -sharedDb
 
 # Run specific actions locally via CLI
-yarn cli --action <action-name>
+# Available actions: promote, demote, archive, playback, auto-inbox, undo, undo-last,
+#                    rule-playlist, sync-liked-songs, liked-songs-stats, clear-liked-cache
+yarn cli <action-name>
+yarn cli:bun <action-name>
+
+# Examples:
+yarn cli promote          # Promote current track
+yarn cli:bun demote       # Demote current track (with Bun)
+yarn cli archive          # Archive old tracks
+yarn cli undo-last        # Undo last promote/demote action
 ```
 
 ## Architecture
@@ -84,30 +110,39 @@ The codebase follows a two-layer architecture:
 
 1. **Actions** (`src/actions/`) - High-level business logic that orchestrates operations. Each action:
 
-   - Extends the base `Action` class
-   - Implements `getRequiredPermissions()` and `getMutations()` methods
-   - Returns an array of mutations to be executed
-   - Can be run in dry-run mode for testing
+   - Implements the `Action` interface with `getID()`, `perform()`, and optional `forStorage()` methods
+   - Returns an array of mutation arrays (mutation sets) to be executed
+   - Supports throttling via `idThrottleMs` to prevent duplicate operations
+   - Can implement `undo()` method for reversible actions (like promote/demote)
+   - Stores action history in DynamoDB for tracking and undo functionality
 
 2. **Mutations** (`src/mutations/`) - Atomic state changes that:
    - Extend the base `Mutation` class
-   - Implement `executeInternal()` for the actual state change
-   - Support rollback operations
-   - Are executed in sequence with automatic retry logic
+   - Implement `mutate()` for the actual state change (Spotify API calls)
+   - Track completion state (pending → running → success/error)
+   - Are executed in sequence with automatic error handling
+   - Store mutation data that can be serialized to DynamoDB
 
 ### Core Components
 
 **Spotify Integration** (`src/spotify.ts`, `src/spotify-api.ts`):
 
 - Wraps the Spotify Web API with caching and automatic token refresh
-- Uses memoization decorators to cache API responses for 4 minutes
+- Uses `@asyncMemoize` decorator to cache API responses and reduce API calls
 - Provides high-level operations like `getTrackFromPlaylist()`, `moveTrack()`, etc.
+- Implements progressive backoff retry logic for rate limiting and timeouts
+- OAuth token management stored in DynamoDB with automatic refresh
 
 **Database Layer** (`src/db/dynamo.ts`):
 
-- DynamoDB integration with multi-tenant support (user partition keys)
-- Tables: User settings, Action history, Track metadata
-- Local DynamoDB for development
+- DynamoDB integration with multi-tenant support (user partition keys via `gId()` method)
+- Uses AWS SDK v3 with command pattern (`send(new QueryCommand(...))`)
+- Tables:
+  - `users` - User settings and OAuth tokens
+  - `action_history` - History of all actions with mutations for undo support
+  - `track_metadata` - Track listen counts and metadata
+  - `liked_songs` and `liked_songs_metadata` - Cached Spotify liked songs
+- Supports local DynamoDB for development (when NODE_ENV=development)
 
 **Track Triage Workflow**:
 
@@ -117,28 +152,34 @@ The codebase follows a two-layer architecture:
 
 ### Key Actions
 
-- `ActionForPlaylist` - Main entry point that routes to specific playlist actions
-- `ProcessPlaybackHistoryAction` - Processes Spotify listening history
-- `AddPlaylistToInbox` - Adds new tracks to inbox
-- `ArchiveAction` - Archives old tracks by month
-- `PromoteAction`/`DemoteAction` - Moves tracks between playlists
-- `RulePlaylistAction` - Creates smart playlists based on rules
+- `actionForPlaylist()` - Routes playlist-specific actions based on playlist name/type
+- `MagicPromoteAction` - Promotes current track to next stage (inbox → current → confirmed)
+- `DemoteAction` - Demotes current track to previous stage
+- `ProcessPlaybackHistoryAction` - Processes Spotify listening history and updates track metadata
+- `AddPlaylistToInbox` - Adds new tracks from source playlists to inbox
+- `ArchiveAction` - Archives confirmed tracks by month (e.g., "Archive 2025-01")
+- `RulePlaylistAction` - Creates smart playlists based on rules (e.g., starred tracks)
+- `UndoAction` - Reverses previous promote/demote actions
+- `SkipToNextTrack` - Skips to next track in current playback
 
 ### Important Patterns
 
-1. **Action Throttling**: Actions are throttled to prevent duplicate operations within 5 minutes
-2. **Dry Run Support**: All actions support `dryRun` mode for safe testing
-3. **Permission System**: Actions declare required permissions (read/write) for playlists
-4. **Error Handling**: Comprehensive error handling with detailed logging
-5. **User Context**: Multi-tenant support with user-specific settings and data
+1. **Action Throttling**: Actions use `idThrottleMs` to prevent duplicate operations (e.g., 5 minutes for promote/demote)
+2. **Memoization with Decorators**: `@asyncMemoize` decorator caches method results with `.reset()` method to clear cache
+3. **Mutation Sets**: Actions return arrays of mutation arrays, where each inner array is executed sequentially
+4. **Error Handling**: Comprehensive error handling with detailed logging; special handling for token expiration (401 errors)
+5. **User Context**: Multi-tenant support with user-specific settings and data; currently hardcoded to 'koalemos' user
+6. **Undo Support**: Actions can implement `undo()` to reverse their operations (tracked in DynamoDB)
 
 ## Development Tips
 
-- The `-run-this-first.ts` file contains setup code for initializing DynamoDB tables
-- Use `yarn cli --help` to see available CLI options
-- Actions can be tested locally with `--dryRun` flag before deployment
-- The system uses AWS X-Ray for distributed tracing in production
+- The `-run-this-first.ts` file initializes global variables (like `dev`, `minutes`, `hours`) and sets up AWS X-Ray tracing
+- Run migrations in `src/migrations/` to set up DynamoDB tables for local development
+- The system uses AWS X-Ray for distributed tracing in production (automatically disabled in development)
 - Settings are managed per-user in DynamoDB, not in config files
+- To reset memoized caches, use `(method as any).reset()` on decorated methods
+- The Lambda handler in `src/index.ts` routes requests to either web API endpoints (`/api/*`), static files, or action handlers
+- Environment variables are loaded from `.env` file (not committed to git)
 
 ## Changelog
 
