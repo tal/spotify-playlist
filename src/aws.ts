@@ -45,7 +45,7 @@ class AWSInstanceManager {
 }
 
 const instance = new AWSInstanceManager(
-  dev.isDev ? 'http://localhost:8000' : undefined,
+  (globalThis as any).dev?.isDev ? 'http://localhost:8000' : undefined,
 )
 
 export { instance as AWS }

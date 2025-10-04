@@ -955,6 +955,13 @@
     "@types/connect" "*"
     "@types/node" "*"
 
+"@types/bun@^1.2.20":
+  version "1.2.20"
+  resolved "https://registry.yarnpkg.com/@types/bun/-/bun-1.2.20.tgz#2b7339f063a5a27a4ef10fd7d0f21095b578eee5"
+  integrity sha512-dX3RGzQ8+KgmMw7CsW4xT5ITBSCrSbfHc36SNT31EOUg/LA9JWq0VDdEXDRSe1InVWpd2yLUM1FUF/kEOyTzYA==
+  dependencies:
+    bun-types "1.2.20"
+
 "@types/cls-hooked@^4.3.3":
   version "4.3.9"
   resolved "https://registry.yarnpkg.com/@types/cls-hooked/-/cls-hooked-4.3.9.tgz#2cff2f7ca961d53213ef626f96afa986a66d3fad"
@@ -1175,6 +1182,13 @@ bowser@^2.11.0:
   version "2.11.0"
   resolved "https://registry.yarnpkg.com/bowser/-/bowser-2.11.0.tgz#5ca3c35757a7aa5771500c70a73a9f91ef420a8f"
   integrity sha512-AlcaJBi/pqqJBIQ8U9Mcpc9i8Aqxn88Skv5d+xBX006BY5u8N3mGLHa5Lgppa7L/HfwgwLgZ6NYs+Ag6uUmJRA==
+
+bun-types@1.2.20:
+  version "1.2.20"
+  resolved "https://registry.yarnpkg.com/bun-types/-/bun-types-1.2.20.tgz#7ff3a05b2183fbe33d51c76ac99ae83aaf882988"
+  integrity sha512-pxTnQYOrKvdOwyiyd/7sMt9yFOenN004Y6O4lCcCUoKVej48FS5cvTw9geRaEcB9TsDZaJKAxPTVvi8tFsVuXA==
+  dependencies:
+    "@types/node" "*"
 
 call-bind@^1.0.0:
   version "1.0.2"

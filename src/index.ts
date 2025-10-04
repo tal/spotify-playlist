@@ -260,6 +260,41 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         new ScanPlaylistsForInbox(spotify),
       ]
       break
+    case 'sync-liked-songs':
+      // Sync liked songs to cache
+      const syncResult = await spotify.syncLikedSongs({ forceRefresh: true })
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: 'Liked songs synced successfully',
+          result: syncResult,
+        }),
+      }
+    case 'liked-songs-stats':
+      // Get cache statistics
+      const metadata = await dynamo.getLikedSongsMetadata(dynamo.user.id)
+      const cachedSongs = await dynamo.getLikedSongs(dynamo.user.id, 10) // Get first 10 as sample
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          metadata: metadata || { message: 'No cache found' },
+          sampleTracks: cachedSongs.map(s => ({
+            name: s.trackName,
+            artist: s.artistName,
+            addedAt: new Date(s.addedAt).toISOString(),
+          })),
+          cacheAge: metadata ? `${Math.floor((Date.now() - metadata.lastSyncedAt) / 1000 / 60)} minutes` : 'N/A',
+        }),
+      }
+    case 'clear-liked-cache':
+      // Clear the cache for current user
+      await spotify.clearLikedSongsCache()
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: 'Liked songs cache cleared successfully',
+        }),
+      }
     default:
       return {
         statusCode: 404,

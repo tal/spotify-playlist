@@ -7,6 +7,8 @@
   "engines": {},
   "scripts": {
     "cli": "./dist/cli.js",
+    "cli:bun": "bun run src/cli-bun.ts",
+    "cli:bun:server": "bun run src/cli-bun.ts --server",
     "dev:api": "npx tsc && node dist/local-server.js",
     "dev:web": "cd web && bun run dev",
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
@@ -15,6 +17,7 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",
     "@types/bluebird": "^3.5.42",
+    "@types/bun": "^1.2.20",
     "@types/detect-port": "^2.0.0",
     "@types/jsonfile": "^6.1.4",
     "@types/lodash": "^4.17.13",
