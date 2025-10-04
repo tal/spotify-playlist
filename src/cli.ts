@@ -2,6 +2,10 @@
 import notifier from 'node-notifier'
 import path from 'path'
 import { exit } from 'process'
+import dotenv from 'dotenv'
+
+// Load environment variables
+dotenv.config({ path: path.join(__dirname, '../.env') })
 
 if (require.main !== module) {
   throw 'Cannot require this module, must call directly'
@@ -165,6 +169,24 @@ const options = {
     },
     queryStringParameters: {},
   },
+  'sync-liked-songs': {
+    pathParameters: {
+      action: 'sync-liked-songs',
+    },
+    queryStringParameters: {},
+  },
+  'liked-songs-stats': {
+    pathParameters: {
+      action: 'liked-songs-stats',
+    },
+    queryStringParameters: {},
+  },
+  'clear-liked-cache': {
+    pathParameters: {
+      action: 'clear-liked-cache',
+    },
+    queryStringParameters: {},
+  },
 }
 
 let action = process.argv[process.argv.length - 1]
@@ -182,20 +204,51 @@ const event = {
   ...(options as any)[action],
 }
 
-import lambdaLocal = require('lambda-local')
+// Check if running with Bun runtime
+const isBun = typeof Bun !== 'undefined'
 
 async function main() {
   try {
-    const result = (await lambdaLocal.execute({
-      event,
-      lambdaPath: path.join(__dirname, '../dist/index.js'),
-      profilePath: '~/.aws/credentials',
-      profileName: 'default',
-      verboseLevel: 0,
-      timeoutMs: 150000,
-      envfile: path.join(__dirname, '../.env'),
-      lambdaHandler: 'handler',
-    })) as { body: string; statusCode: number }
+    let result: { body: string; statusCode: number }
+    
+    if (isBun) {
+      // Running with Bun - import handler directly (no compilation needed)
+      const { handler } = await import('./index')
+      
+      // Mock Lambda context
+      const context = {
+        callbackWaitsForEmptyEventLoop: true,
+        functionName: 'spotify-playlist-local',
+        functionVersion: '$LATEST',
+        invokedFunctionArn: 'arn:aws:lambda:us-east-1:123456789012:function:spotify-playlist-local',
+        memoryLimitInMB: '128',
+        awsRequestId: 'local-request-id-' + Date.now(),
+        logGroupName: '/aws/lambda/spotify-playlist-local',
+        logStreamName: '2024/01/01/[$LATEST]abcdef1234567890',
+        getRemainingTimeInMillis: () => 150000,
+        done: () => {},
+        fail: () => {},
+        succeed: () => {},
+      }
+      
+      console.log(`Running with Bun (no compilation needed): ${action}`)
+      const handlerResult = await handler(event as any, context as any, () => {})
+      result = handlerResult || { body: 'No response', statusCode: 200 }
+    } else {
+      // Running with Node - use lambda-local with compiled code
+      const lambdaLocal = require('lambda-local')
+      console.log(`Running with Node (using compiled code): ${action}`)
+      result = (await lambdaLocal.execute({
+        event,
+        lambdaPath: path.join(__dirname, '../dist/index.js'),
+        profilePath: '~/.aws/credentials',
+        profileName: 'default',
+        verboseLevel: 0,
+        timeoutMs: 150000,
+        envfile: path.join(__dirname, '../.env'),
+        lambdaHandler: 'handler',
+      })) as { body: string; statusCode: number }
+    }
 
     if (result.statusCode != 200) {
       throw `error2 ${JSON.stringify(result)}`
