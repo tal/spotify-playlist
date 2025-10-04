@@ -4,12 +4,16 @@ import {
   UpdateCommand,
   GetCommand,
   BatchGetCommand,
+  BatchWriteCommand,
   PutCommand,
+  DeleteCommand,
   QueryCommandInput,
   UpdateCommandInput,
   GetCommandInput,
   BatchGetCommandInput,
+  BatchWriteCommandInput,
   PutCommandInput,
+  DeleteCommandInput,
 } from '@aws-sdk/lib-dynamodb'
 import { AWS } from '../aws'
 
@@ -376,6 +380,164 @@ export class Dynamo {
     await AWS.docs.send(new PutCommand(params))
 
     return user
+  }
+
+  // Liked Songs Cache Methods
+  
+  async getLikedSongsMetadata(userId: string): Promise<LikedSongsMetadata | undefined> {
+    const params: GetCommandInput = {
+      TableName: 'liked_songs_metadata',
+      Key: { userId },
+    }
+    
+    const resp = await AWS.docs.send(new GetCommand(params))
+    return resp.Item as LikedSongsMetadata | undefined
+  }
+  
+  async updateLikedSongsMetadata(metadata: Partial<LikedSongsMetadata> & { userId: string }) {
+    const updateExpressions: string[] = []
+    const expressionAttributeNames: Record<string, string> = {}
+    const expressionAttributeValues: Record<string, any> = {}
+    
+    // Build update expression dynamically based on provided fields
+    const fields = [
+      'totalTracks', 'lastSyncedAt', 'lastFullSyncAt', 
+      'mostRecentAddedAt', 'oldestAddedAt', 'syncVersion', 
+      'syncStatus', 'lastError'
+    ]
+    
+    fields.forEach(field => {
+      if (field in metadata && metadata[field as keyof LikedSongsMetadata] !== undefined) {
+        updateExpressions.push(`#${field} = :${field}`)
+        expressionAttributeNames[`#${field}`] = field
+        expressionAttributeValues[`:${field}`] = metadata[field as keyof LikedSongsMetadata]
+      }
+    })
+    
+    if (updateExpressions.length === 0) {
+      throw new Error('No fields to update in metadata')
+    }
+    
+    const params: UpdateCommandInput = {
+      TableName: 'liked_songs_metadata',
+      Key: { userId: metadata.userId },
+      UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ReturnValues: 'ALL_NEW',
+    }
+    
+    const response = await AWS.docs.send(new UpdateCommand(params))
+    return response.Attributes as LikedSongsMetadata
+  }
+  
+  async batchPutLikedSongs(songs: LikedSongItem[]) {
+    // DynamoDB BatchWrite has a limit of 25 items per request
+    const batches = chunk(songs, 25)
+    
+    for (const batch of batches) {
+      const params: BatchWriteCommandInput = {
+        RequestItems: {
+          liked_songs: batch.map(song => ({
+            PutRequest: {
+              Item: song,
+            },
+          })),
+        },
+      }
+      
+      await AWS.docs.send(new BatchWriteCommand(params))
+      console.log(`✅ Wrote batch of ${batch.length} liked songs to cache`)
+    }
+  }
+  
+  async getLikedSongs(userId: string, limit?: number): Promise<LikedSongItem[]> {
+    // Query using the GSI to get songs sorted by addedAt
+    const params: QueryCommandInput = {
+      TableName: 'liked_songs',
+      IndexName: 'userId-addedAt-index',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId,
+      },
+      ScanIndexForward: false, // Sort descending (newest first)
+      Limit: limit,
+    }
+    
+    const items: LikedSongItem[] = []
+    let lastEvaluatedKey: any = undefined
+    
+    do {
+      if (lastEvaluatedKey) {
+        params.ExclusiveStartKey = lastEvaluatedKey
+      }
+      
+      const resp = await AWS.docs.send(new QueryCommand(params))
+      
+      if (resp.Items) {
+        items.push(...(resp.Items as LikedSongItem[]))
+      }
+      
+      lastEvaluatedKey = resp.LastEvaluatedKey
+      
+      // If we have a limit and reached it, stop
+      if (limit && items.length >= limit) {
+        return items.slice(0, limit)
+      }
+    } while (lastEvaluatedKey)
+    
+    return items
+  }
+  
+  async queryLikedSongsSince(userId: string, since: number): Promise<LikedSongItem[]> {
+    const params: QueryCommandInput = {
+      TableName: 'liked_songs',
+      IndexName: 'userId-addedAt-index',
+      KeyConditionExpression: 'userId = :userId AND addedAt > :since',
+      ExpressionAttributeValues: {
+        ':userId': userId,
+        ':since': since,
+      },
+      ScanIndexForward: false, // Sort descending
+    }
+    
+    const resp = await AWS.docs.send(new QueryCommand(params))
+    return (resp.Items || []) as LikedSongItem[]
+  }
+  
+  async clearLikedSongs(userId: string) {
+    // First, get all songs for this user
+    const songs = await this.getLikedSongs(userId)
+    
+    // Delete in batches of 25
+    const batches = chunk(songs, 25)
+    
+    for (const batch of batches) {
+      const params: BatchWriteCommandInput = {
+        RequestItems: {
+          liked_songs: batch.map(song => ({
+            DeleteRequest: {
+              Key: {
+                userId: song.userId,
+                trackId: song.trackId,
+              },
+            },
+          })),
+        },
+      }
+      
+      await AWS.docs.send(new BatchWriteCommand(params))
+      console.log(`🗑️ Deleted batch of ${batch.length} liked songs from cache`)
+    }
+  }
+  
+  async putLikedSong(song: LikedSongItem) {
+    const params: PutCommandInput = {
+      TableName: 'liked_songs',
+      Item: song,
+    }
+    
+    await AWS.docs.send(new PutCommand(params))
   }
 }
 
