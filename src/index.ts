@@ -14,6 +14,9 @@ import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { RulePlaylistAction } from './actions/rule-playlist'
 import { UndoAction } from './actions/undo-action'
+import { webApiHandler } from './web-api'
+import * as fs from 'fs'
+import * as path from 'path'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -58,7 +61,74 @@ export const instant: APIGatewayProxyHandler = async (ev) => {
   }
 }
 
+// Helper to serve static files
+const serveStaticFile = async (filePath: string): Promise<any> => {
+  const webRoot = path.join(__dirname, '../web/dist')
+  const fullPath = path.join(webRoot, filePath)
+  
+  // Security: prevent directory traversal
+  if (!fullPath.startsWith(webRoot)) {
+    return {
+      statusCode: 403,
+      body: 'Forbidden',
+    }
+  }
+  
+  try {
+    const content = fs.readFileSync(fullPath)
+    const ext = path.extname(filePath).toLowerCase()
+    
+    const mimeTypes: Record<string, string> = {
+      '.html': 'text/html',
+      '.js': 'application/javascript',
+      '.css': 'text/css',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+    }
+    
+    const contentType = mimeTypes[ext] || 'application/octet-stream'
+    
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
+      },
+      body: content.toString('base64'),
+      isBase64Encoded: true,
+    }
+  } catch (err) {
+    return {
+      statusCode: 404,
+      body: 'Not Found',
+    }
+  }
+}
+
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
+  const { path: requestPath, httpMethod } = ev
+  
+  // Handle API routes
+  if (requestPath && requestPath.startsWith('/api/')) {
+    return webApiHandler(ev, ctx, () => {})
+  }
+  
+  // Handle static file serving for web UI
+  if (requestPath && (requestPath === '/' || requestPath.startsWith('/assets/') || requestPath.match(/\.(js|css|html|ico|png|jpg|jpeg|gif|svg)$/))) {
+    const filePath = requestPath === '/' ? 'index.html' : requestPath.slice(1)
+    return serveStaticFile(filePath)
+  }
+  
+  // For all other routes, serve index.html (for React Router)
+  if (requestPath && !requestPath.includes('.')) {
+    return serveStaticFile('index.html')
+  }
+  
   let actionName: string | null = actionNameFromEvent(ev)
 
   if (!actionName) {

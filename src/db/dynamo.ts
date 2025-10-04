@@ -44,23 +44,93 @@ export class Dynamo {
     // Use Scan with filter since we can't query by partial partition key
     const { ScanCommand } = await import('@aws-sdk/lib-dynamodb')
     
-    const params = {
-      TableName: 'action_history',
-      FilterExpression: 'begins_with(id, :prefix) AND created_at > :since AND attribute_not_exists(undone)',
-      ExpressionAttributeValues: {
-        ':prefix': `${this.user.id}:${actionType}:`,
-        ':since': since,
-      },
-      Limit: limit * 10, // Request more items since we're filtering
-    }
-
-    const resp = await AWS.docs.send(new ScanCommand(params))
+    // If actionType is empty, search for all actions for this user
+    const prefix = actionType ? `${this.user.id}:${actionType}:` : `${this.user.id}:`
     
-    // Sort by created_at descending and limit results
-    const items = (resp.Items || []) as ActionHistoryItemData[]
-    return items
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, limit)
+    console.log('Scanning for actions with prefix:', prefix, 'since:', new Date(since).toISOString())
+    
+    const allItems: ActionHistoryItemData[] = []
+    let lastEvaluatedKey: any = undefined
+    let totalScanned = 0
+    let scanAttempts = 0
+    const maxScanAttempts = 10 // Prevent infinite loops
+    
+    // Continue scanning until we have enough items or no more data
+    while (scanAttempts < maxScanAttempts) {
+      scanAttempts++
+      
+      const params: any = {
+        TableName: 'action_history',
+        FilterExpression: 'begins_with(id, :prefix) AND created_at > :since AND attribute_not_exists(undone)',
+        ExpressionAttributeValues: {
+          ':prefix': prefix,
+          ':since': since,
+        },
+        Limit: 500, // Scan 500 items per request
+      }
+      
+      if (lastEvaluatedKey) {
+        params.ExclusiveStartKey = lastEvaluatedKey
+      }
+      
+      try {
+        const resp = await AWS.docs.send(new ScanCommand(params))
+        
+        if (resp.Items && resp.Items.length > 0) {
+          allItems.push(...(resp.Items as ActionHistoryItemData[]))
+          console.log(`Scan attempt ${scanAttempts}: found ${resp.Items.length} matching items out of ${resp.ScannedCount} scanned`)
+        }
+        
+        totalScanned += resp.ScannedCount || 0
+        lastEvaluatedKey = resp.LastEvaluatedKey
+        
+        // If we have enough items for the requested limit (with some buffer), stop scanning
+        if (allItems.length >= limit * 2) {
+          console.log('Found enough items, stopping scan')
+          break
+        }
+        
+        // If no more items to scan, stop
+        if (!lastEvaluatedKey) {
+          console.log('No more items to scan')
+          break
+        }
+        
+        // Add a small delay to avoid throughput issues
+        if (scanAttempts > 1) {
+          await new Promise(resolve => setTimeout(resolve, 100 * scanAttempts))
+        }
+        
+      } catch (error: any) {
+        console.error(`Error on scan attempt ${scanAttempts}:`, error.message)
+        
+        // Handle throughput errors with exponential backoff
+        if (error.name === 'ProvisionedThroughputExceededException') {
+          const backoffMs = Math.min(1000 * Math.pow(2, scanAttempts), 10000)
+          console.log(`Throughput exceeded, backing off for ${backoffMs}ms`)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
+        }
+        
+        // For other errors, throw
+        throw error
+      }
+    }
+    
+    console.log(`Total scanned: ${totalScanned} items, found ${allItems.length} matching items`)
+    
+    // Sort by created_at descending and return requested limit
+    const sortedItems = allItems.sort((a, b) => b.created_at - a.created_at)
+    
+    // Log the first few items for debugging
+    if (sortedItems.length > 0) {
+      console.log('Most recent actions:')
+      sortedItems.slice(0, 3).forEach((item, i) => {
+        console.log(`  ${i + 1}. ${item.id} - ${new Date(item.created_at).toISOString()}`)
+      })
+    }
+    
+    return sortedItems.slice(0, limit)
   }
 
   async markActionAsUndone(actionId: string) {

@@ -6,7 +6,11 @@
   "private": true,
   "engines": {},
   "scripts": {
-    "cli": "./dist/cli.js"
+    "cli": "./dist/cli.js",
+    "dev:api": "npx tsc && node dist/local-server.js",
+    "dev:web": "cd web && bun run dev",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "build": "npx tsc"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",
@@ -16,6 +20,7 @@
     "@types/lodash": "^4.17.13",
     "@types/node": "^22.10.6",
     "@types/node-notifier": "^8.0.5",
+    "concurrently": "^9.2.0",
     "lambda-local": "^2.2.0",
     "prettier": "^3.4.2",
     "typescript": "^5.8.3"

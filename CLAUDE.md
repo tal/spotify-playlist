@@ -18,10 +18,23 @@ npx tsc
 yarn cli
 ```
 
+### Web Frontend Development
+
+```bash
+# Start the React development server (uses Bun and Vite)
+cd web && bun run dev
+
+# Build the React app for production
+cd web && bun run build
+
+# Preview the production build locally
+cd web && bun run preview
+```
+
 ### Deployment
 
 ```bash
-# Deploy to AWS Lambda (dev environment)
+# Deploy to AWS Lambda (includes building React app)
 ruby scripts/publish.rb
 ```
 
@@ -36,6 +49,34 @@ yarn cli --action <action-name>
 ```
 
 ## Architecture
+
+### Web Frontend
+
+The system includes a modern React web frontend that provides a dashboard interface for managing playlists:
+
+**Technology Stack**:
+- **Bun**: Runtime, package manager, and build tool
+- **React 19**: UI framework with TypeScript
+- **Vite**: Fast development server and bundler
+- **Tailwind CSS**: Utility-first CSS framework
+- **React Query**: Server state management and caching
+- **React Router**: Client-side routing
+
+**Key Features**:
+- Dashboard with playlist statistics and quick actions
+- Action history viewer with undo capabilities
+- Playlist browser with search and sorting
+- Real-time track controls for promote/demote
+- Responsive design for mobile and desktop
+
+**API Endpoints** (`src/web-api.ts`):
+- `GET /api/dashboard` - Combined dashboard data
+- `GET /api/actions/recent` - Recent action history
+- `GET /api/playlists` - All user playlists
+- `GET /api/tracks/current` - Currently playing track
+- `POST /api/actions/{action}` - Trigger actions (promote, demote, archive, etc.)
+
+The frontend is served directly from the Lambda function, with static files built and included in the deployment package.
 
 ### Action-Mutation Pattern
 
@@ -175,3 +216,21 @@ The codebase follows a two-layer architecture:
   - Updated X-Ray integration to use `captureAWSv3Client` for v3 compatibility
   - Fixed TypeScript type issues related to optional TableName property
 - **Note on Spotify SDK**: spotify-web-api-node (5.0.2) hasn't been updated since 2020. Consider migrating to Spotify's official TypeScript SDK in future updates
+
+### 2025-01-06 - React Web Frontend
+
+- Created a modern React web frontend for the Spotify playlist management system:
+  - Uses **Bun** as the runtime, package manager, and build tool
+  - Built with **React 19**, **TypeScript**, and **Vite** for fast development
+  - Styled with **Tailwind CSS** for responsive design
+  - **React Query** for efficient server state management and caching
+  - **React Router** for client-side navigation
+- Implemented key features:
+  - **Dashboard**: Overview of playlists, user info, and quick actions
+  - **Action History**: View recent actions with undo capability for promote/demote
+  - **Playlist Browser**: Search and sort all playlists with links to Spotify
+  - **Track Controls**: Real-time promote/demote buttons for currently playing track
+- Created API endpoints in `src/web-api.ts` for frontend communication
+- Updated Lambda handler to serve both API routes and static files
+- Modified deployment script to build React app before deploying to Lambda
+- Frontend is accessible at the Lambda function's root URL (`/`)
