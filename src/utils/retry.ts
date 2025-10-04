@@ -20,8 +20,22 @@ const DEFAULT_CONFIG: Required<RetryConfig> = {
       return true
     }
 
+    // Retry on 401 (unauthorized - likely expired token)
+    if (error.statusCode === 401) {
+      console.log('🔑 Detected 401 unauthorized error - token may be expired')
+      return true
+    }
+
     // Retry on 429 (rate limit) or 503 (service unavailable)
     if (error.statusCode === 429 || error.statusCode === 503) {
+      return true
+    }
+
+    // Check for Spotify API specific error messages
+    const errorMessage = error.message || error.body?.error?.message || ''
+    if (errorMessage.toLowerCase().includes('access token expired') ||
+        errorMessage.toLowerCase().includes('invalid_token')) {
+      console.log('🔑 Detected token expiration error in message')
       return true
     }
 
@@ -125,4 +139,79 @@ export async function retrySpotifyCall<T>(
       }
     },
   })
+}
+
+// Helper type to avoid circular dependency with Spotify class
+interface SpotifyWithRefresh {
+  refreshAccessToken(): Promise<string>
+}
+
+/**
+ * Retry wrapper specifically for Spotify API calls that handles token expiration.
+ * When a 401 error is detected, this will refresh the access token and retry the operation once.
+ * For other retryable errors, uses standard exponential backoff.
+ */
+export async function retrySpotifyCallWithTokenRefresh<T>(
+  spotify: SpotifyWithRefresh,
+  operation: () => Promise<T>,
+  operationName: string,
+  config?: RetryConfig,
+): Promise<T> {
+  let tokenRefreshed = false
+
+  return retryWithBackoff(
+    async () => {
+      try {
+        return await operation()
+      } catch (error: any) {
+        // If this is a 401 error and we haven't already refreshed the token, do so now
+        const is401 = error.statusCode === 401
+        const isTokenError =
+          error.message?.toLowerCase().includes('access token expired') ||
+          error.message?.toLowerCase().includes('invalid_token') ||
+          error.body?.error?.message?.toLowerCase().includes('access token expired')
+
+        if ((is401 || isTokenError) && !tokenRefreshed) {
+          console.log(`🔑 ${operationName}: Refreshing expired token before retry`)
+          tokenRefreshed = true
+          await spotify.refreshAccessToken()
+          // Don't delay after token refresh - retry immediately
+          return await operation()
+        }
+
+        // For other errors or if we already refreshed, throw to trigger standard retry logic
+        throw error
+      }
+    },
+    {
+      ...config,
+      onRetry: (error, attempt, nextDelay) => {
+        const isTimeout =
+          error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET'
+        const isRateLimit =
+          error.statusCode === 429 ||
+          error.response?.headers?.['retry-after'] ||
+          error.headers?.['retry-after']
+        const is401 = error.statusCode === 401
+
+        if (is401) {
+          console.log(
+            `🔑 ${operationName} got 401 error, retrying attempt ${attempt} after ${nextDelay}ms`,
+          )
+        } else if (isTimeout) {
+          console.log(
+            `⏱️ ${operationName} timed out, retrying attempt ${attempt} after ${nextDelay}ms`,
+          )
+        } else if (isRateLimit) {
+          console.log(
+            `🚦 ${operationName} rate limited, retrying attempt ${attempt} after ${nextDelay}ms`,
+          )
+        } else {
+          console.log(
+            `⚠️ ${operationName} failed, retrying attempt ${attempt} after ${nextDelay}ms`,
+          )
+        }
+      },
+    },
+  )
 }

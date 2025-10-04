@@ -40,8 +40,21 @@ async function performAction(
   let allMutations: Mutation<any>[] = []
 
   for (let mutations of mutationSets) {
-    await Promise.all(mutations.map((f) => f.run({ client, dynamo })))
-    allMutations = allMutations.concat(mutations)
+    try {
+      await Promise.all(mutations.map((f) => f.run({ client, dynamo })))
+      allMutations = allMutations.concat(mutations)
+    } catch (error: any) {
+      // Log additional context for 401 errors to help with debugging
+      if (error.statusCode === 401 || error.message?.toLowerCase().includes('access token expired')) {
+        console.error('❌ Token expiration error during action execution:', {
+          actionId: await id,
+          actionType: action.type,
+          error: error.message || error,
+        })
+      }
+      // Rethrow the error to maintain existing behavior
+      throw error
+    }
   }
 
   if (action.forStorage) {

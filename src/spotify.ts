@@ -97,12 +97,41 @@ function logError<T>(
 
   if (typeof value === 'function') {
     descriptor.value = async function (...args: any[]) {
+      // Helper to check if error is a 401/token expiration error
+      const isTokenError = (error: any) => {
+        const is401 = error.statusCode === 401
+        const hasTokenMessage =
+          error.message?.toLowerCase().includes('access token expired') ||
+          error.message?.toLowerCase().includes('invalid_token') ||
+          error.body?.error?.message?.toLowerCase().includes('access token expired')
+        return is401 || hasTokenMessage
+      }
+
       try {
         console.log(`🔈 Executing ${propertyKey}`)
         const promise = value.apply(this, args)
         promise.then(() => console.log(`📥 Returned ${propertyKey}`))
-        return promise
-      } catch (error) {
+        return await promise
+      } catch (error: any) {
+        // If this is a token error and we have dynamo access, try to refresh and retry once
+        const hasRefreshCapability =
+          (this as any)._dynamo &&
+          typeof (this as any).refreshAccessToken === 'function'
+
+        if (isTokenError(error) && hasRefreshCapability) {
+          console.log(`🔑 ${propertyKey}: Caught token error, refreshing and retrying`)
+          try {
+            await (this as any).refreshAccessToken()
+            // Retry the operation once after refreshing the token
+            const retryPromise = value.apply(this, args)
+            retryPromise.then(() => console.log(`📥 Returned ${propertyKey} (after token refresh)`))
+            return await retryPromise
+          } catch (retryError: any) {
+            console.error(`🧨 Error in ${propertyKey} after token refresh:`, retryError)
+            throw retryError
+          }
+        }
+
         console.error(`🧨 Error in ${propertyKey}`, error)
         throw error
       }
@@ -110,12 +139,41 @@ function logError<T>(
   }
   if (typeof get === 'function') {
     descriptor.get = async function () {
+      // Helper to check if error is a 401/token expiration error
+      const isTokenError = (error: any) => {
+        const is401 = error.statusCode === 401
+        const hasTokenMessage =
+          error.message?.toLowerCase().includes('access token expired') ||
+          error.message?.toLowerCase().includes('invalid_token') ||
+          error.body?.error?.message?.toLowerCase().includes('access token expired')
+        return is401 || hasTokenMessage
+      }
+
       try {
         console.log(`🔈 Executing get ${propertyKey}`)
         const promise = get.call(this)
         promise.then(() => console.log(`📥 Returned get ${propertyKey}`))
-        return promise
-      } catch (error) {
+        return await promise
+      } catch (error: any) {
+        // If this is a token error and we have dynamo access, try to refresh and retry once
+        const hasRefreshCapability =
+          (this as any)._dynamo &&
+          typeof (this as any).refreshAccessToken === 'function'
+
+        if (isTokenError(error) && hasRefreshCapability) {
+          console.log(`🔑 ${propertyKey}: Caught token error, refreshing and retrying`)
+          try {
+            await (this as any).refreshAccessToken()
+            // Retry the operation once after refreshing the token
+            const retryPromise = get.call(this)
+            retryPromise.then(() => console.log(`📥 Returned get ${propertyKey} (after token refresh)`))
+            return await retryPromise
+          } catch (retryError: any) {
+            console.error(`🧨 Error in get ${propertyKey} after token refresh:`, retryError)
+            throw retryError
+          }
+        }
+
         console.error(`🧨 Error in ${propertyKey}`, error)
         throw error
       }
@@ -147,8 +205,9 @@ export type PlaylistID = { id: string; type?: 'playlist' }
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
 import { delay } from './utils/delay'
-import { retrySpotifyCall } from './utils/retry'
+import { retrySpotifyCall, retrySpotifyCallWithTokenRefresh } from './utils/retry'
 import { getSpotifyRetryConfig } from './utils/spotify-retry-config'
+import { LikedSongsCache } from './db/liked-songs-cache'
 
 const env = getEnv().then((env) => env.spotify)
 
@@ -193,14 +252,61 @@ async function getClient(dynamo: Dynamo) {
 
 export class Spotify {
   private retryConfig = getSpotifyRetryConfig()
+  private likedSongsCache?: LikedSongsCache
+  private _dynamo?: Dynamo
 
   static async get(dynamo: Dynamo) {
     const client = await getClient(dynamo)
 
-    return new Spotify(client)
+    return new Spotify(client, dynamo)
   }
 
-  private constructor(readonly client: SpotifyWebApi) {}
+  private constructor(
+    readonly client: SpotifyWebApi,
+    dynamo?: Dynamo
+  ) {
+    this._dynamo = dynamo
+    if (dynamo) {
+      this.likedSongsCache = new LikedSongsCache(dynamo, this)
+    }
+  }
+
+  /**
+   * Refreshes the Spotify access token when it expires mid-execution
+   * This method updates both the client's token and stores the new token in DynamoDB
+   *
+   * Note: This is intended for internal use by retry logic, but exposed to allow
+   * the retry utilities to call it without circular dependencies.
+   */
+  async refreshAccessToken(): Promise<string> {
+    if (!this._dynamo) {
+      throw new Error('Cannot refresh access token: dynamo instance not available')
+    }
+
+    console.log('🔄 Access token expired, refreshing...')
+
+    const { clientId, clientSecret } = await env
+    const user = this._dynamo.user
+
+    // Refresh the token using the current client (which has refreshToken set)
+    const refreshed = await this.client.refreshAccessToken()
+    const newAccessToken = refreshed.body.access_token
+    const expiresAt = refreshed.body.expires_in * 1000 + new Date().getTime()
+
+    console.log(`✅ Access token refreshed, expires at ${new Date(expiresAt).toISOString()}`)
+
+    // Update the token in DynamoDB
+    await this._dynamo.updateAccessToken(
+      user.id,
+      newAccessToken,
+      expiresAt,
+    )
+
+    // Update the client's access token so subsequent calls use the new token
+    this.client.setAccessToken(newAccessToken)
+
+    return newAccessToken
+  }
 
   private _meData?: User
   async myID() {
@@ -527,15 +633,24 @@ export class Spotify {
 
   private _savedTracks?: Promise<Track[]>
   @logError
-  mySavedTracks() {
+  mySavedTracks(options?: SyncOptions) {
+    // If we have a cache manager and no specific options forcing API-only behavior
+    if (this.likedSongsCache && !this._savedTracks) {
+      console.log('🎵 Using liked songs cache for saved tracks')
+      this._savedTracks = this.likedSongsCache.getLikedSongsWithCache(options || {})
+      return this._savedTracks
+    }
+    
+    // Fall back to original implementation if no cache or already in progress
     if (this._savedTracks) {
       return this._savedTracks
     }
 
     // Did an async function call because going straight to a promise felt like a pita
     const run = async () => {
-      // Fetch first page with retry logic
-      let response = await retrySpotifyCall(
+      // Fetch first page with retry logic that includes token refresh
+      let response = await retrySpotifyCallWithTokenRefresh(
+        this,
         () => this.client.getMySavedTracks({ limit: 50 }),
         'mySavedTracks (initial)',
         this.retryConfig.savedTracks,
@@ -550,8 +665,9 @@ export class Spotify {
 
         console.log(`🛫 mySavedTracks page ${pageNumber} offset:${offset}`)
 
-        // Fetch subsequent pages with retry logic
-        response = await retrySpotifyCall(
+        // Fetch subsequent pages with retry logic that includes token refresh
+        response = await retrySpotifyCallWithTokenRefresh(
+          this,
           () =>
             this.client.getMySavedTracks({
               limit: response.body.limit,
@@ -571,6 +687,30 @@ export class Spotify {
     this._savedTracks = run()
 
     return this._savedTracks
+  }
+  
+  /**
+   * Force a fresh sync of liked songs to the cache
+   */
+  async syncLikedSongs(options?: SyncOptions) {
+    if (!this.likedSongsCache) {
+      throw new Error('Liked songs cache not initialized')
+    }
+    
+    return this.likedSongsCache.syncLikedSongs(options)
+  }
+  
+  /**
+   * Clear the liked songs cache for the current user
+   */
+  async clearLikedSongsCache() {
+    if (!this.likedSongsCache || !this._dynamo) {
+      throw new Error('Liked songs cache not initialized')
+    }
+    
+    const userId = this._dynamo.user.id
+    await this._dynamo.clearLikedSongs(userId)
+    console.log('✅ Liked songs cache cleared')
   }
 
   @logError
