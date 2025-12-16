@@ -61,10 +61,6 @@ function asyncMemoize(
 
       return promise
     }
-
-    descriptor.value.reset = function () {
-      this[memkey] = null
-    }
   }
 
   if (typeof get === 'function') {
@@ -277,7 +273,8 @@ export class Spotify {
     )
 
     // Reset the cache so the new playlist will be found next time
-    ;(this.allPlaylists as any).reset()
+    console.log(`🗑️ Resetting playlist cache`)
+    ;(this as any).__mem_allPlaylists = null
 
     return result.body
   }
@@ -288,7 +285,7 @@ export class Spotify {
       console.log(
         `[getOrCreatePlaylist] Force refreshing playlist cache before checking for: ${named}`,
       )
-      ;(this.allPlaylists as any).reset()
+      ;(this as any).__mem_allPlaylists = null
     }
 
     let playlist = await this.optionalPlaylist(named)
