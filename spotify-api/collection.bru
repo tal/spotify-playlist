@@ -7,8 +7,8 @@ auth:oauth2 {
   callback_url: http://localhost:3050/auth/spotify/callback
   authorization_url: https://accounts.spotify.com/authorize
   access_token_url: https://accounts.spotify.com/api/token
-  client_id: b714041067904423a37718a5a64dec689
-  client_secret: 768e11b8cd384b178cbde2c00f403f62
+  client_id: {{process.env.SPOTIFY_CLIENT_ID}}
+  client_secret: {{process.env.SPOTIFY_CLIENT_SECRET}}
   scope: playlist-read-private,user-read-recently-played,user-read-playback-position,user-library-read
   state: foo
   pkce: false
