@@ -32,7 +32,9 @@ async function getSpotifyClient() {
 
 // API handler for web endpoints
 export const webApiHandler: APIGatewayProxyHandler = async (event) => {
-  const { path, httpMethod } = event
+  // Lambda Function URLs use rawPath, API Gateway uses path
+  const path = (event as any).rawPath || event.path
+  const httpMethod = (event as any).requestContext?.http?.method || event.httpMethod
 
   // Handle CORS preflight
   if (httpMethod === 'OPTIONS') {
@@ -49,6 +51,30 @@ export const webApiHandler: APIGatewayProxyHandler = async (event) => {
           return createResponse(200, {
             status: 'ok',
             timestamp: new Date().toISOString(),
+          })
+        }
+
+        case 'debug/env': {
+          // Debug endpoint to check environment and credentials
+          return createResponse(200, {
+            nodeEnv: process.env.NODE_ENV,
+            awsRegion: process.env.AWS_REGION,
+            hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+            hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+            accessKeyPrefix: process.env.AWS_ACCESS_KEY_ID?.substring(0, 6) || 'none',
+          })
+        }
+
+        case 'debug/event': {
+          // Debug endpoint to inspect the event structure
+          return createResponse(200, {
+            path: event.path,
+            rawPath: (event as any).rawPath,
+            httpMethod: event.httpMethod,
+            requestContext: (event as any).requestContext,
+            pathParameters: event.pathParameters,
+            queryStringParameters: event.queryStringParameters,
+            rawQueryString: (event as any).rawQueryString,
           })
         }
         

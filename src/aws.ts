@@ -13,14 +13,28 @@ class AWSInstanceManager {
 
   constructor(endpoint?: string) {
     // Create base DynamoDB client with v3 SDK
-    let dynamoClient = new DynamoDBClient({
-      endpoint,
+    // Build config object conditionally - only include credentials if explicitly provided
+    // In Lambda, we MUST NOT pass explicit credentials - let the SDK use the execution role
+    const config: any = {
       region: process.env.AWS_REGION || 'us-east-1',
-      credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      } : undefined,
-    })
+    }
+
+    // Only add endpoint for local development
+    if (endpoint) {
+      config.endpoint = endpoint
+
+      // Only use explicit credentials for local DynamoDB (when endpoint is set)
+      // Lambda execution role credentials are handled automatically by the SDK
+      if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+        config.credentials = {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        }
+      }
+    }
+    // For Lambda (no endpoint), omit credentials entirely to use execution role
+
+    let dynamoClient = new DynamoDBClient(config)
 
     // If X-Ray is enabled, capture the client
     if (AWSXRay && process.env._X_AMZN_TRACE_ID) {

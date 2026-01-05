@@ -111,27 +111,34 @@ const serveStaticFile = async (filePath: string): Promise<any> => {
 }
 
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
-  const { path: requestPath, httpMethod } = ev
-  
-  // Handle API routes
+  // Lambda Function URLs use rawPath, API Gateway uses path
+  const requestPath = (ev as any).rawPath || ev.path
+  const httpMethod = (ev as any).requestContext?.http?.method || ev.httpMethod
+
+  // Handle API routes first
   if (requestPath && requestPath.startsWith('/api/')) {
     return webApiHandler(ev, ctx, () => {})
   }
-  
-  // Handle static file serving for web UI
-  if (requestPath && (requestPath === '/' || requestPath.startsWith('/assets/') || requestPath.match(/\.(js|css|html|ico|png|jpg|jpeg|gif|svg)$/))) {
-    const filePath = requestPath === '/' ? 'index.html' : requestPath.slice(1)
+
+  // Handle static file serving for web UI (files with extensions or /assets/)
+  if (requestPath && (requestPath.startsWith('/assets/') || requestPath.match(/\.(js|css|html|ico|png|jpg|jpeg|gif|svg)$/))) {
+    const filePath = requestPath.slice(1)
     return serveStaticFile(filePath)
   }
-  
-  // For all other routes, serve index.html (for React Router)
-  if (requestPath && !requestPath.includes('.')) {
+
+  // Root path serves React app
+  if (requestPath === '/') {
     return serveStaticFile('index.html')
   }
-  
+
+  // Try to extract action name from the request
   let actionName: string | null = actionNameFromEvent(ev)
 
+  // If no action found and path doesn't include a dot, serve React app for client-side routing
   if (!actionName) {
+    if (requestPath && !requestPath.includes('.')) {
+      return serveStaticFile('index.html')
+    }
     return {
       statusCode: 404,
       body: JSON.stringify({
@@ -139,6 +146,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         request: {
           pathParameters: ev.pathParameters,
           queryStringParameters: ev.queryStringParameters,
+          path: requestPath,
         },
       }),
     }
@@ -311,22 +319,53 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       body: JSON.stringify({ result }),
     }
   } catch (err) {
-    if (!err) {
-      err = 'unknown error'
+    // Handle errors properly with descriptive messages
+    console.error('Error performing action:', err)
+
+    let errorMessage = 'Unknown error occurred'
+    let statusCode = 500
+
+    if (typeof err === 'string') {
+      errorMessage = err
+      // Business logic errors (like "cannot promote if confirmed") should be 400
+      if (err.includes('cannot') || err.includes('no track') || err.includes('not found')) {
+        statusCode = 400
+      }
+    } else if (err instanceof Error) {
+      errorMessage = err.message
+    } else if (err && typeof err === 'object') {
+      errorMessage = JSON.stringify(err)
     }
+
     return {
-      statusCode: 500,
-      error: JSON.stringify(err),
+      statusCode,
+      body: JSON.stringify({
+        error: errorMessage,
+        action: actionName,
+      }),
     }
   }
 }
 
 function actionNameFromEvent(ev: APIGatewayProxyEvent) {
   let actionName: string | null = null
+
+  // API Gateway with path parameters
   if (ev.pathParameters && ev.pathParameters['action']) {
     actionName = ev.pathParameters['action']
-  } else if (ev.queryStringParameters && ev.queryStringParameters['action']) {
+  }
+  // Query string parameters (works for both API Gateway and Lambda Function URLs)
+  else if (ev.queryStringParameters && ev.queryStringParameters['action']) {
     actionName = ev.queryStringParameters['action']
   }
+  // Lambda Function URL: extract action from path (e.g., /promote -> promote)
+  else {
+    const path = (ev as any).rawPath || ev.path
+    if (path && path !== '/' && !path.startsWith('/api/') && !path.includes('.')) {
+      // Remove leading slash and use as action name
+      actionName = path.substring(1)
+    }
+  }
+
   return actionName
 }
