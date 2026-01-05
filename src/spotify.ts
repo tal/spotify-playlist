@@ -201,6 +201,7 @@ export interface SpotifyPesonalCreds {
 
 export type TrackForMove = { uri: string; type?: 'track'; id?: string }
 export type PlaylistID = { id: string; type?: 'playlist' }
+export type TracksAreSavedResult = { saved: string[]; removed: string[] }
 
 import { getEnv } from './env'
 import { Dynamo } from './db/dynamo'
@@ -520,6 +521,44 @@ export class Spotify {
     const client = this.client
     const response = await client.containsMySavedTracks([id])
     return response.body[0]
+  }
+
+  /**
+   * Check if multiple tracks are saved in the user's library.
+   * More efficient than calling trackIsSaved multiple times.
+   * Spotify API supports up to 50 IDs per call.
+   * @param trackIds Array of track IDs to check (max 50)
+   * @returns Object with arrays of saved and removed track IDs
+   */
+  @logError
+  async tracksAreSaved(trackIds: string[]): Promise<TracksAreSavedResult> {
+    if (trackIds.length === 0) {
+      return { saved: [], removed: [] }
+    }
+
+    if (trackIds.length > 50) {
+      throw new Error('tracksAreSaved supports maximum 50 track IDs per call')
+    }
+
+    const response = await retrySpotifyCallWithTokenRefresh(
+      this,
+      () => this.client.containsMySavedTracks(trackIds),
+      'tracksAreSaved',
+      this.retryConfig.savedTracks,
+    )
+
+    const saved: string[] = []
+    const removed: string[] = []
+
+    response.body.forEach((isSaved, index) => {
+      if (isSaved) {
+        saved.push(trackIds[index])
+      } else {
+        removed.push(trackIds[index])
+      }
+    })
+
+    return { saved, removed }
   }
 
   @logError

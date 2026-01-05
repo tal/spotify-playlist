@@ -16,6 +16,8 @@ import {
   DeleteCommandInput,
 } from '@aws-sdk/lib-dynamodb'
 import { AWS } from '../aws'
+import { retryWithBackoff } from '../utils/retry'
+import { delay } from '../utils/delay'
 
 export class Dynamo {
   constructor(public readonly user: UserData) {}
@@ -398,14 +400,15 @@ export class Dynamo {
     const updateExpressions: string[] = []
     const expressionAttributeNames: Record<string, string> = {}
     const expressionAttributeValues: Record<string, any> = {}
-    
+
     // Build update expression dynamically based on provided fields
     const fields = [
-      'totalTracks', 'lastSyncedAt', 'lastFullSyncAt', 
-      'mostRecentAddedAt', 'oldestAddedAt', 'syncVersion', 
-      'syncStatus', 'lastError'
+      'totalTracks', 'lastSyncedAt', 'lastFullSyncAt',
+      'mostRecentAddedAt', 'oldestAddedAt', 'syncVersion',
+      'syncStatus', 'lastError',
+      'firstPageTrackIds', 'firstPageHash' // For smart change detection
     ]
-    
+
     fields.forEach(field => {
       if (field in metadata && metadata[field as keyof LikedSongsMetadata] !== undefined) {
         updateExpressions.push(`#${field} = :${field}`)
@@ -434,8 +437,19 @@ export class Dynamo {
   async batchPutLikedSongs(songs: LikedSongItem[]) {
     // DynamoDB BatchWrite has a limit of 25 items per request
     const batches = chunk(songs, 25)
-    
-    for (const batch of batches) {
+
+    // Helper to check if error is a DynamoDB throughput error
+    const isDynamoThroughputError = (error: any): boolean => {
+      const errorName = error.name || error.__type || ''
+      return (
+        errorName.includes('ProvisionedThroughputExceededException') ||
+        errorName.includes('ThrottlingException') ||
+        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
+      )
+    }
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
       const params: BatchWriteCommandInput = {
         RequestItems: {
           liked_songs: batch.map(song => ({
@@ -445,9 +459,29 @@ export class Dynamo {
           })),
         },
       }
-      
-      await AWS.docs.send(new BatchWriteCommand(params))
+
+      await retryWithBackoff(
+        () => AWS.docs.send(new BatchWriteCommand(params)),
+        {
+          maxRetries: 8,
+          initialDelay: 500,
+          maxDelay: 30000,
+          backoffMultiplier: 2,
+          shouldRetry: isDynamoThroughputError,
+          onRetry: (error, attempt, nextDelay) => {
+            console.log(
+              `⚠️ DynamoDB throughput exceeded, retrying batch ${i + 1}/${batches.length} (attempt ${attempt}) after ${nextDelay}ms`,
+            )
+          },
+        },
+      )
       console.log(`✅ Wrote batch of ${batch.length} liked songs to cache`)
+
+      // Add delay between batches to avoid overwhelming DynamoDB
+      // Larger delay reduces throttling but slows overall throughput
+      if (i < batches.length - 1) {
+        await delay(500)
+      }
     }
   }
   
@@ -463,29 +497,60 @@ export class Dynamo {
       ScanIndexForward: false, // Sort descending (newest first)
       Limit: limit,
     }
-    
+
+    // Helper to check if error is a DynamoDB throughput error
+    const isDynamoThroughputError = (error: any): boolean => {
+      const errorName = error.name || error.__type || ''
+      return (
+        errorName.includes('ProvisionedThroughputExceededException') ||
+        errorName.includes('ThrottlingException') ||
+        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
+      )
+    }
+
     const items: LikedSongItem[] = []
     let lastEvaluatedKey: any = undefined
-    
+    let pageNum = 0
+
     do {
       if (lastEvaluatedKey) {
         params.ExclusiveStartKey = lastEvaluatedKey
       }
-      
-      const resp = await AWS.docs.send(new QueryCommand(params))
-      
+
+      const resp = await retryWithBackoff(
+        () => AWS.docs.send(new QueryCommand(params)),
+        {
+          maxRetries: 8,
+          initialDelay: 500,
+          maxDelay: 30000,
+          backoffMultiplier: 2,
+          shouldRetry: isDynamoThroughputError,
+          onRetry: (error, attempt, nextDelay) => {
+            console.log(
+              `⚠️ DynamoDB throughput exceeded reading liked songs page ${pageNum + 1} (attempt ${attempt}) after ${nextDelay}ms`,
+            )
+          },
+        },
+      )
+
       if (resp.Items) {
         items.push(...(resp.Items as LikedSongItem[]))
       }
-      
+
       lastEvaluatedKey = resp.LastEvaluatedKey
-      
+      pageNum++
+
+      // Add small delay between pages to avoid overwhelming DynamoDB
+      if (lastEvaluatedKey) {
+        await delay(100)
+      }
+
       // If we have a limit and reached it, stop
       if (limit && items.length >= limit) {
         return items.slice(0, limit)
       }
     } while (lastEvaluatedKey)
-    
+
     return items
   }
   
@@ -508,11 +573,22 @@ export class Dynamo {
   async clearLikedSongs(userId: string) {
     // First, get all songs for this user
     const songs = await this.getLikedSongs(userId)
-    
+
     // Delete in batches of 25
     const batches = chunk(songs, 25)
-    
-    for (const batch of batches) {
+
+    // Helper to check if error is a DynamoDB throughput error
+    const isDynamoThroughputError = (error: any): boolean => {
+      const errorName = error.name || error.__type || ''
+      return (
+        errorName.includes('ProvisionedThroughputExceededException') ||
+        errorName.includes('ThrottlingException') ||
+        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
+      )
+    }
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
       const params: BatchWriteCommandInput = {
         RequestItems: {
           liked_songs: batch.map(song => ({
@@ -525,12 +601,103 @@ export class Dynamo {
           })),
         },
       }
-      
-      await AWS.docs.send(new BatchWriteCommand(params))
+
+      await retryWithBackoff(
+        () => AWS.docs.send(new BatchWriteCommand(params)),
+        {
+          maxRetries: 8,
+          initialDelay: 500,
+          maxDelay: 30000,
+          backoffMultiplier: 2,
+          shouldRetry: isDynamoThroughputError,
+          onRetry: (error, attempt, nextDelay) => {
+            console.log(
+              `⚠️ DynamoDB throughput exceeded, retrying delete batch ${i + 1}/${batches.length} (attempt ${attempt}) after ${nextDelay}ms`,
+            )
+          },
+        },
+      )
       console.log(`🗑️ Deleted batch of ${batch.length} liked songs from cache`)
+
+      // Add delay between batches to avoid overwhelming DynamoDB
+      if (i < batches.length - 1) {
+        await delay(500)
+      }
     }
   }
-  
+
+  /**
+   * Delete specific liked songs by their track IDs.
+   * More efficient than clearing all songs when only a few were removed.
+   * @param userId The user's ID
+   * @param trackIds Array of track IDs to delete
+   * @returns Number of tracks deleted
+   */
+  async deleteLikedSongsByIds(userId: string, trackIds: string[]): Promise<number> {
+    if (trackIds.length === 0) {
+      return 0
+    }
+
+    // Helper to check if error is a DynamoDB throughput error
+    const isDynamoThroughputError = (error: any): boolean => {
+      const errorName = error.name || error.__type || ''
+      return (
+        errorName.includes('ProvisionedThroughputExceededException') ||
+        errorName.includes('ThrottlingException') ||
+        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
+      )
+    }
+
+    // Create key objects for deletion
+    const keysToDelete = trackIds.map(trackId => ({
+      userId,
+      trackId,
+    }))
+
+    // DynamoDB BatchWrite has a limit of 25 items per request
+    const batches = chunk(keysToDelete, 25)
+    let totalDeleted = 0
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      const params: BatchWriteCommandInput = {
+        RequestItems: {
+          liked_songs: batch.map(key => ({
+            DeleteRequest: {
+              Key: key,
+            },
+          })),
+        },
+      }
+
+      await retryWithBackoff(
+        () => AWS.docs.send(new BatchWriteCommand(params)),
+        {
+          maxRetries: 8,
+          initialDelay: 500,
+          maxDelay: 30000,
+          backoffMultiplier: 2,
+          shouldRetry: isDynamoThroughputError,
+          onRetry: (error, attempt, nextDelay) => {
+            console.log(
+              `Warning: DynamoDB throughput exceeded, retrying delete batch ${i + 1}/${batches.length} (attempt ${attempt}) after ${nextDelay}ms`,
+            )
+          },
+        },
+      )
+
+      totalDeleted += batch.length
+      console.log(`Deleted batch of ${batch.length} liked songs from cache`)
+
+      // Add delay between batches to avoid overwhelming DynamoDB
+      if (i < batches.length - 1) {
+        await delay(500)
+      }
+    }
+
+    return totalDeleted
+  }
+
   async putLikedSong(song: LikedSongItem) {
     const params: PutCommandInput = {
       TableName: 'liked_songs',

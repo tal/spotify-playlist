@@ -23,10 +23,13 @@ declare interface LikedSongsMetadata {
   syncVersion: number // Incremented on each sync to detect changes
   syncStatus: 'synced' | 'syncing' | 'error' | 'never_synced'
   lastError?: string
+  // First page tracking for smart change detection
+  firstPageTrackIds?: string[] // Track IDs from first page (up to 50) for comparison
+  firstPageHash?: string // Quick hash of first page for fast comparison
 }
 
 declare type SyncResult = {
-  type: 'full' | 'incremental' | 'cached'
+  type: 'full' | 'incremental' | 'cached' | 'removal_detection'
   tracksAdded: number
   tracksRemoved: number
   totalTracks: number
@@ -38,4 +41,27 @@ declare type SyncOptions = {
   forceRefresh?: boolean // Force a full sync regardless of cache state
   incrementalOnly?: boolean // Only sync new tracks, don't check for removals
   maxAge?: number // Maximum cache age in milliseconds (default 24 hours)
+}
+
+// Removal detection types
+declare type RemovalDetectionStatus = 'completed' | 'needs_full_sync' | 'no_cached_tracks'
+
+declare type RemovalDetectionResult = {
+  status: RemovalDetectionStatus
+  removalsFound: number
+  tracksChecked: number
+  duration: number
+  removedTrackIds?: string[]
+}
+
+// Change detection types
+declare type ChangeType = 'none' | 'additions' | 'removals' | 'additions_and_removals' | 'unknown'
+
+declare type ChangeDetectionResult = {
+  changeType: ChangeType
+  estimatedNewTracks: number
+  estimatedRemovals: number
+  currentTotal?: number
+  currentFirstPageIds?: string[] // Track IDs from current first page (for storage after sync)
+  removalsInFirstPage?: number // How many removals detected in first page comparison
 }
