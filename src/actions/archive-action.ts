@@ -6,7 +6,7 @@ import { Mutation } from '../mutations/mutation'
 
 export class ArchiveAction implements Action {
   type: string = 'archive'
-  // idThrottleMs: number = 30 * 1000
+  idThrottleMs: number = 60 * 1000
   public created_at: number
 
   constructor(private client: Spotify) {

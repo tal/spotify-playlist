@@ -255,6 +255,7 @@ export class Spotify {
   private retryConfig = getSpotifyRetryConfig()
   private likedSongsCache?: LikedSongsCache
   private _dynamo?: Dynamo
+  private _createdPlaylists: Map<string, { id: string; name: string }> = new Map()
 
   static async get(dynamo: Dynamo) {
     const client = await getClient(dynamo)
@@ -387,6 +388,15 @@ export class Spotify {
   }
 
   async getOrCreatePlaylist(named: string, forceRefresh = false) {
+    // Check local creation cache first — immune to Spotify API eventual consistency
+    const locallyCreated = this._createdPlaylists.get(named)
+    if (locallyCreated) {
+      console.log(
+        `[getOrCreatePlaylist] Found locally created playlist: ${named} (id: ${locallyCreated.id})`,
+      )
+      return locallyCreated
+    }
+
     // If forceRefresh is true, clear the playlist cache before checking
     if (forceRefresh) {
       console.log(
@@ -404,7 +414,9 @@ export class Spotify {
     }
 
     console.log(`[getOrCreatePlaylist] Creating new playlist: ${named}`)
-    return this.createPlaylist(named)
+    const created = await this.createPlaylist(named)
+    this._createdPlaylists.set(named, created)
+    return created
   }
 
   private _tracks: { [k: string]: PlaylistTrack[] } = {}
