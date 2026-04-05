@@ -37,7 +37,12 @@ export class RulePlaylistAction implements Action {
   async randomStarredArtistTracks(tracks: PlaylistTrack[]) {
     const artistId = getRandomElement(tracks).track.artists[0].id
     const savedTracks = await this.client.mySavedTracks()
-    return savedTracks.filter((track) => track.artists[0].id === artistId)
+    return savedTracks.filter(
+      (track) =>
+        track.artists[0].id === artistId &&
+        track.uri &&
+        !track.uri.startsWith('spotify:local:'),
+    )
   }
 
   async perform({ dynamo }: { dynamo: Dynamo }) {
@@ -49,7 +54,13 @@ export class RulePlaylistAction implements Action {
     }
     const tracks = await this.client.tracksForPlaylist(starred)
 
-    const randomTracks = getRandomSlice(tracks, 40).map((track) => ({
+    // Filter out local tracks (spotify:local:) which can't be added via API
+    const isStreamableTrack = (track: PlaylistTrack) =>
+      track.track.uri && !track.track.uri.startsWith('spotify:local:')
+
+    const streamableTracks = tracks.filter(isStreamableTrack)
+
+    const randomTracks = getRandomSlice(streamableTracks, 40).map((track) => ({
       uri: track.track.uri,
     }))
 
@@ -60,7 +71,7 @@ export class RulePlaylistAction implements Action {
       },
     })
 
-    const likedTracks = await this.randomStarredArtistTracks(tracks)
+    const likedTracks = await this.randomStarredArtistTracks(streamableTracks)
 
     const likedTracksMutation = new AddTrackMutation({
       tracks: likedTracks,
