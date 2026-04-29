@@ -21,6 +21,9 @@ async function performAction(
   action: Action,
 ): Promise<Result<ActionResult, PerformActionReason>> {
   const id = action.getID()
+  // Suppress unhandled rejection if perform() throws before we await `id`.
+  // The rejection still surfaces wherever `id` is explicitly awaited.
+  id.catch(() => {})
 
   const { idThrottleMs } = action
 

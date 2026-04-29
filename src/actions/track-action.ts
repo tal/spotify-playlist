@@ -246,8 +246,9 @@ export abstract class TrackAction implements Action {
     const { client } = this
     let currentTrack = await client.currentTrack
     if (!currentTrack) {
-      // The player property is memoized with a reset() method added by decorator
-      ;(client.player as any).reset()
+      // Clear the memoized player cache so the retry fetches fresh state.
+      // The @asyncMemoize decorator stores its cache on `__mem_<propertyKey>`.
+      ;(client as any).__mem_player = null
       await delay(85)
       currentTrack = await client.currentTrack
     }
