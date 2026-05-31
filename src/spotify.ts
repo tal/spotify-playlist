@@ -662,6 +662,19 @@ export class Spotify {
     }
   }
 
+  async renamePlaylist(playlistId: string, name: string) {
+    console.log(`✏️ Renaming playlist ${playlistId} to "${name}"`)
+    // changePlaylistDetails exists at runtime but is missing from the bundled types
+    await (this.client as any).changePlaylistDetails(playlistId, { name })
+    // Cached playlist names are now stale
+    ;(this as any).__mem_allPlaylists = null
+  }
+
+  async playlistByPrefix(prefix: string) {
+    const playlists = await this.allPlaylists()
+    return playlists.find((p) => p?.name?.startsWith(prefix))
+  }
+
   async moveTracks(
     from: PlaylistID,
     to: PlaylistID,

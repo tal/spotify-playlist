@@ -13,6 +13,7 @@ export type MutationTypes =
   | 'update-last-played-processed'
   | 'triage-action'
   | 'empty-playlist'
+  | 'rename-playlist'
 
 export interface MutationData<T> {
   type: 'mutation'
