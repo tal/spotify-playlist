@@ -170,9 +170,6 @@ export abstract class TrackAction implements Action {
   }
 
   async promoteTrack(): Promise<Mutation<any>[][]> {
-    const currentStateP = this.currentState()
-    const promotedStateP = this.promotedState()
-
     const { client } = this
 
     const player = await client.player
@@ -182,9 +179,9 @@ export abstract class TrackAction implements Action {
     if (!currentTrack) throw 'no track provided 2'
     console.log(`🏃 Magic Promote: ${displayTrack(currentTrack)}`)
 
-    const { inbox, current } = await getTriageInfo(client)
-    const currentState = await currentStateP
-    const promotedState = await promotedStateP
+    const [currentState, promotedState, { inbox, current }] = await Promise.all(
+      [this.currentState(), this.promotedState(), getTriageInfo(client)],
+    )
 
     const mutations: Mutation<any>[] = []
 

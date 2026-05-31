@@ -20,17 +20,12 @@ async function performAction(
   client: Spotify,
   action: Action,
 ): Promise<Result<ActionResult, PerformActionReason>> {
-  const id = action.getID()
-  // Suppress unhandled rejection if perform() throws before we await `id`.
-  // The rejection still surfaces wherever `id` is explicitly awaited.
-  id.catch(() => {})
-
   const { idThrottleMs } = action
 
   if (idThrottleMs) {
     const now = new Date().getTime()
     const since = now - idThrottleMs
-    const history = await dynamo.getActionHistory(await id, since)
+    const history = await dynamo.getActionHistory(await action.getID(), since)
 
     if (history) {
       return {
@@ -50,7 +45,7 @@ async function performAction(
       // Log additional context for 401 errors to help with debugging
       if (error.statusCode === 401 || error.message?.toLowerCase().includes('access token expired')) {
         console.error('❌ Token expiration error during action execution:', {
-          actionId: await id,
+          actionId: await action.getID().catch(() => '<unknown>'),
           actionType: action.type,
           error: error.message || error,
         })
@@ -73,7 +68,7 @@ async function performAction(
   return {
     reason: 'success',
     value: {
-      action_name: await id,
+      action_name: await action.getID(),
       action_type: action.type,
       name: description,
     },
