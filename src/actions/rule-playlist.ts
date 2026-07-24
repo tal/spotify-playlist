@@ -43,9 +43,11 @@ export class RulePlaylistAction implements Action {
   async randomStarredArtistTracks(tracks: PlaylistTrack[]) {
     const artist = getRandomElement(tracks).track.artists[0]
     const savedTracks = await this.client.mySavedTracks()
+    // Match on ANY credited artist, not just the primary one — otherwise every
+    // collab / feature where the artist is billed second gets dropped.
     const artistTracks = savedTracks.filter(
       (track) =>
-        track.artists[0].id === artist.id &&
+        track.artists.some((trackArtist) => trackArtist.id === artist.id) &&
         track.uri &&
         !track.uri.startsWith('spotify:local:'),
     )
