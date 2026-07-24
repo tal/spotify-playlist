@@ -238,6 +238,7 @@ async function getClient(dynamo: Dynamo) {
       u.id,
       refreshed.body.access_token,
       expiresAt,
+      (refreshed.body as any).refresh_token,
     )
   }
 
@@ -293,6 +294,11 @@ export class Spotify {
     // Refresh the token using the current client (which has refreshToken set)
     const refreshed = await this.client.refreshAccessToken()
     const newAccessToken = refreshed.body.access_token
+    // Spotify may rotate the refresh token — capture it when present so we can
+    // persist it instead of holding onto the stale (and eventually revoked) one.
+    const newRefreshToken = (refreshed.body as any).refresh_token as
+      | string
+      | undefined
     const expiresAt = refreshed.body.expires_in * 1000 + new Date().getTime()
 
     console.log(`✅ Access token refreshed, expires at ${new Date(expiresAt).toISOString()}`)
@@ -302,10 +308,15 @@ export class Spotify {
       user.id,
       newAccessToken,
       expiresAt,
+      newRefreshToken,
     )
 
     // Update the client's access token so subsequent calls use the new token
     this.client.setAccessToken(newAccessToken)
+    if (newRefreshToken) {
+      // Keep the in-memory client in sync with the rotated refresh token too.
+      ;(this.client as any).setRefreshToken(newRefreshToken)
+    }
 
     return newAccessToken
   }

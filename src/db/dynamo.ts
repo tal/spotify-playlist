@@ -310,16 +310,36 @@ export class Dynamo {
     return Object.values(result)
   }
 
-  async updateAccessToken(id: string, token: string, expiresAt: number) {
+  async updateAccessToken(
+    id: string,
+    token: string,
+    expiresAt: number,
+    refreshToken?: string,
+  ) {
+    // Spotify may hand back a NEW refresh token on refresh. When it does, we
+    // have to persist it — otherwise we keep re-sending the stale one until
+    // Spotify revokes it and every future refresh fails with invalid_grant
+    // ("Refresh token revoked"). When Spotify omits refresh_token, keep the
+    // existing stored value untouched.
+    const setClauses = [
+      'spotifyAuth.accessToken = :at',
+      'spotifyAuth.expiresAt = :exp',
+    ]
+    const values: Record<string, any> = {
+      ':at': token,
+      ':exp': expiresAt,
+    }
+
+    if (refreshToken) {
+      setClauses.push('spotifyAuth.refreshToken = :rt')
+      values[':rt'] = refreshToken
+    }
+
     var params: UpdateCommandInput = {
       TableName: 'user',
       Key: { id },
-      UpdateExpression:
-        'set spotifyAuth.accessToken = :at, spotifyAuth.expiresAt = :exp',
-      ExpressionAttributeValues: {
-        ':at': token,
-        ':exp': expiresAt,
-      },
+      UpdateExpression: `set ${setClauses.join(', ')}`,
+      ExpressionAttributeValues: values,
       ReturnValues: 'ALL_NEW',
     }
 
