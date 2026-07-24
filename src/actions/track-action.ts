@@ -290,7 +290,19 @@ export abstract class TrackAction implements Action {
       )
     }
 
-    mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
+    // If the track lives in the Starred playlist, demoting just pulls it out of
+    // Starred and leaves it liked. Otherwise it gets unsaved from the library.
+    const inStarred = starred
+      ? await client.trackInPlaylist(currentTrack, starred)
+      : undefined
+
+    if (inStarred && starred) {
+      mutations.push(
+        new RemoveTrackMutation({ playlist: starred, track: currentTrack }),
+      )
+    } else {
+      mutations.push(new UnsaveTrackMutation({ tracks: [currentTrack] }))
+    }
     mutations.push(
       new TriageActionMutation({
         track: currentTrack,
