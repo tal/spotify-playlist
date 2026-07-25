@@ -15,7 +15,7 @@ import { handler } from './index'
 
 // Default Lambda event structure  
 const jsonPayload = {
-  path: '/action.lambda',  // Path with dot to skip static file serving
+  path: '/action.lambda',  // Path with dot so it is never treated as an action name; pathParameters.action wins
   headers: {
     Accept:
       'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -216,7 +216,15 @@ if (useServer) {
     port: 3001,
     async fetch(req: Request) {
       const url = new URL(req.url)
-      
+
+      // Dotted paths (e.g. /favicon.ico) are never actions — reject before touching Dynamo/Spotify
+      if (url.pathname.includes('.')) {
+        return new Response(JSON.stringify({ error: 'not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
       // Parse action from URL path
       const actionFromPath = url.pathname.slice(1) || 'instant'
       

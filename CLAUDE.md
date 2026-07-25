@@ -14,7 +14,7 @@ This is a Spotify playlist management automation system that runs as an AWS Lamb
 # Compile TypeScript to JavaScript
 npx tsc
 
-# Build for production (compiles TypeScript and builds web frontend)
+# Build for production (compiles TypeScript)
 npm run build
 
 # Run the CLI locally (Node.js - requires compilation first)
@@ -27,31 +27,10 @@ yarn cli:bun <action-name>
 yarn cli:bun:server
 ```
 
-### Web Frontend Development
-
-```bash
-# Start both API server and web dev server concurrently
-npm run dev
-
-# Or start them separately:
-# Start the local API server (port 3001)
-npm run dev:api
-
-# Start the React development server (uses Bun and Vite, port 5173)
-npm run dev:web
-cd web && bun run dev
-
-# Build the React app for production
-cd web && bun run build
-
-# Preview the production build locally
-cd web && bun run preview
-```
-
 ### Deployment
 
 ```bash
-# Deploy to AWS Lambda (includes building React app)
+# Deploy to AWS Lambda
 ruby scripts/publish.rb
 ```
 
@@ -75,34 +54,6 @@ yarn cli undo-last        # Undo last promote/demote action
 ```
 
 ## Architecture
-
-### Web Frontend
-
-The system includes a modern React web frontend that provides a dashboard interface for managing playlists:
-
-**Technology Stack**:
-- **Bun**: Runtime, package manager, and build tool
-- **React 19**: UI framework with TypeScript
-- **Vite**: Fast development server and bundler
-- **Tailwind CSS**: Utility-first CSS framework
-- **React Query**: Server state management and caching
-- **React Router**: Client-side routing
-
-**Key Features**:
-- Dashboard with playlist statistics and quick actions
-- Action history viewer with undo capabilities
-- Playlist browser with search and sorting
-- Real-time track controls for promote/demote
-- Responsive design for mobile and desktop
-
-**API Endpoints** (`src/web-api.ts`):
-- `GET /api/dashboard` - Combined dashboard data
-- `GET /api/actions/recent` - Recent action history
-- `GET /api/playlists` - All user playlists
-- `GET /api/tracks/current` - Currently playing track
-- `POST /api/actions/{action}` - Trigger actions (promote, demote, archive, etc.)
-
-The frontend is served directly from the Lambda function, with static files built and included in the deployment package.
 
 ### Action-Mutation Pattern
 
@@ -178,10 +129,17 @@ The codebase follows a two-layer architecture:
 - The system uses AWS X-Ray for distributed tracing in production (automatically disabled in development)
 - Settings are managed per-user in DynamoDB, not in config files
 - To reset memoized caches, use `(method as any).reset()` on decorated methods
-- The Lambda handler in `src/index.ts` routes requests to either web API endpoints (`/api/*`), static files, or action handlers
+- The Lambda handler in `src/index.ts` routes requests to action handlers based on the path, path parameters, or `action` query parameter
 - Environment variables are loaded from `.env` file (not committed to git)
 
 ## Changelog
+
+### 2026-07-25 - Remove Web Frontend
+
+- Excised the React web frontend entirely: deleted `web/`, `src/web-api.ts` (all `/api/*` endpoints), `src/local-server.ts`, and `dev.sh`
+- The Lambda handler now serves only action endpoints — no more `/api/*` routing, static file serving, or SPA fallback
+- Removed `dev`, `dev:api`, and `dev:web` npm scripts and the `concurrently` dependency
+- `scripts/publish.rb` no longer builds a React app before packaging the Lambda zip
 
 ### 2025-07-03 - Implement Undo Functionality for Promote/Demote Actions
 

@@ -223,14 +223,11 @@ These exist in the resource policy but may no longer be actively used:
 Deploy is handled by `scripts/publish.rb`:
 
 ```bash
-# Build React frontend
-cd web && bun run build && cd ..
-
 # Compile TypeScript
 npx tsc
 
-# Create zip (excludes .env, .git, dynamodb_local_latest, web source/node_modules, markdown, scripts)
-zip -r index.zip . -x ".env" ".git/*" "dynamodb_local_latest/*" "node_modules/typescript/*" "web/node_modules/*" "web/src/*" "*.md" "scripts/*"
+# Create zip (excludes .env, .git, dynamodb_local_latest, markdown, scripts)
+zip -r index.zip . -x ".env" ".git/*" "dynamodb_local_latest/*" "node_modules/typescript/*" "*.md" "scripts/*"
 
 # Deploy
 aws lambda update-function-code \

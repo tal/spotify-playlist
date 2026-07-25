@@ -14,9 +14,6 @@ import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { RulePlaylistAction } from './actions/rule-playlist'
 import { UndoAction } from './actions/undo-action'
-import { webApiHandler } from './web-api'
-import * as fs from 'fs'
-import * as path from 'path'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -61,84 +58,14 @@ export const instant: APIGatewayProxyHandler = async (ev) => {
   }
 }
 
-// Helper to serve static files
-const serveStaticFile = async (filePath: string): Promise<any> => {
-  const webRoot = path.join(__dirname, '../web/dist')
-  const fullPath = path.join(webRoot, filePath)
-  
-  // Security: prevent directory traversal
-  if (!fullPath.startsWith(webRoot)) {
-    return {
-      statusCode: 403,
-      body: 'Forbidden',
-    }
-  }
-  
-  try {
-    const content = fs.readFileSync(fullPath)
-    const ext = path.extname(filePath).toLowerCase()
-    
-    const mimeTypes: Record<string, string> = {
-      '.html': 'text/html',
-      '.js': 'application/javascript',
-      '.css': 'text/css',
-      '.json': 'application/json',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.ico': 'image/x-icon',
-    }
-    
-    const contentType = mimeTypes[ext] || 'application/octet-stream'
-    
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
-      },
-      body: content.toString('base64'),
-      isBase64Encoded: true,
-    }
-  } catch (err) {
-    return {
-      statusCode: 404,
-      body: 'Not Found',
-    }
-  }
-}
-
 export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   // Lambda Function URLs use rawPath, API Gateway uses path
   const requestPath = (ev as any).rawPath || ev.path
-  const httpMethod = (ev as any).requestContext?.http?.method || ev.httpMethod
-
-  // Handle API routes first
-  if (requestPath && requestPath.startsWith('/api/')) {
-    return webApiHandler(ev, ctx, () => {})
-  }
-
-  // Handle static file serving for web UI (files with extensions or /assets/)
-  if (requestPath && (requestPath.startsWith('/assets/') || requestPath.match(/\.(js|css|html|ico|png|jpg|jpeg|gif|svg)$/))) {
-    const filePath = requestPath.slice(1)
-    return serveStaticFile(filePath)
-  }
-
-  // Root path serves React app
-  if (requestPath === '/') {
-    return serveStaticFile('index.html')
-  }
 
   // Try to extract action name from the request
   let actionName: string | null = actionNameFromEvent(ev)
 
-  // If no action found and path doesn't include a dot, serve React app for client-side routing
   if (!actionName) {
-    if (requestPath && !requestPath.includes('.')) {
-      return serveStaticFile('index.html')
-    }
     return {
       statusCode: 404,
       body: JSON.stringify({
@@ -361,7 +288,8 @@ function actionNameFromEvent(ev: APIGatewayProxyEvent) {
   // Lambda Function URL: extract action from path (e.g., /promote -> promote)
   else {
     const path = (ev as any).rawPath || ev.path
-    if (path && path !== '/' && !path.startsWith('/api/') && !path.includes('.')) {
+    // Paths with dots (e.g. /favicon.ico) are never action names
+    if (path && path !== '/' && !path.includes('.')) {
       // Remove leading slash and use as action name
       actionName = path.substring(1)
     }

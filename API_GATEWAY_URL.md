@@ -183,13 +183,12 @@ Both URLs access the same Lambda function and work identically.
 ## Implementation Details
 
 The Lambda handler (`src/index.ts`) automatically detects the event source:
-- API Gateway events use `event.path` and `event.httpMethod`
-- Lambda Function URL events use `event.rawPath` and `event.requestContext.http.method`
+- API Gateway events use `event.path`
+- Lambda Function URL events use `event.rawPath`
 
 The code handles both transparently:
 ```typescript
 const requestPath = (ev as any).rawPath || ev.path
-const httpMethod = (ev as any).requestContext?.http?.method || ev.httpMethod
 ```
 
 ## Integration Examples
