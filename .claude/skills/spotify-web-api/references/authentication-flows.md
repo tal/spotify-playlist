@@ -1,10 +1,24 @@
 # Spotify OAuth Authentication Flows
 
+## Contents
+
+- Prerequisites
+- Authorization Code Flow
+- Authorization Code with PKCE
+- Client Credentials Flow
+- Using Access Tokens
+- Token Storage Best Practices
+- Error Handling
+- Flow Selection Guide
+- Runnable Implementation
+
 ## Prerequisites
 
 1. Create application at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Note your Client ID and Client Secret
 3. Configure Redirect URI(s) in app settings
+
+**Redirect URI requirements:** All redirect URIs must use HTTPS, except loopback addresses which may use HTTP. The hostname `localhost` is rejected — use the explicit IP literal `http://127.0.0.1:PORT/callback` or `http://[::1]:PORT/callback`. Loopback URIs — and only loopback URIs — may be registered without a port and supply the port dynamically at authorization time. Matching is exact, including case and trailing slash; the `redirect_uri` sent to the token endpoint is validated against the one used to obtain the code (no redirect occurs) and must match it exactly.
 
 ## Authorization Code Flow
 
@@ -27,7 +41,7 @@ https://accounts.spotify.com/authorize?
 |-----------|-------------|
 | `client_id` | Your app's client ID |
 | `response_type` | Must be `code` |
-| `redirect_uri` | URL-encoded redirect URI (must match dashboard) |
+| `redirect_uri` | URL-encoded redirect URI (must match a dashboard entry exactly — case and trailing slash included) |
 | `scope` | Space-separated list of scopes (URL-encoded) |
 | `state` | Random string for CSRF protection |
 | `show_dialog` | Optional: `true` to force consent dialog |
@@ -53,7 +67,12 @@ curl -X POST https://accounts.spotify.com/api/token \
   -d "redirect_uri=YOUR_REDIRECT_URI"
 ```
 
-Base64 encode: `client_id:client_secret`
+Base64 encode `client_id:client_secret` for the `Authorization: Basic` header:
+
+```bash
+echo -n "your_client_id:your_client_secret" | base64
+# Result example: eW91cl9jbGllbnRfaWQ6eW91cl9jbGllbnRfc2VjcmV0
+```
 
 ### Step 4: Receive Tokens
 
@@ -66,6 +85,14 @@ Base64 encode: `client_id:client_secret`
   "scope": "user-read-private playlist-read-private"
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `access_token` | Use this for API requests |
+| `token_type` | Always "Bearer" |
+| `expires_in` | Seconds until the **access token** expires (typically 3600 = 1 hour); does not describe the refresh token |
+| `refresh_token` | Use to obtain a new access token without re-authorization; expires 6 months after the user's authorization (see Step 5) |
+| `scope` | Granted scopes (may differ from requested) |
 
 ### Step 5: Refresh Token
 
@@ -80,6 +107,8 @@ curl -X POST https://accounts.spotify.com/api/token \
 ```
 
 Response includes new `access_token` (and possibly new `refresh_token`).
+
+Persist the returned `refresh_token` when present (Spotify may rotate it); otherwise keep the existing one. The refresh token itself expires 6 months after the user's authorization, and refreshing an access token does not extend that window — track the original authorization timestamp and re-authorize the user before the deadline. When the refresh token has expired, the token endpoint returns `400` with `invalid_grant`; do not retry, send the user through Step 1 again.
 
 ---
 
@@ -190,17 +219,30 @@ curl https://api.spotify.com/v1/me \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
+Example response:
+
+```json
+{
+  "id": "user_id",
+  "display_name": "User Name"
+}
+```
+
+See `references/endpoints-complete.md` for the full User object schema.
+
 ---
 
 ## Token Storage Best Practices
 
-1. **Never expose tokens in client-side code** - Use backend proxy
-2. **Store refresh tokens securely** - Encrypted database, secure keychain
+1. **Never expose tokens or the client secret in client-side code** - Use a backend proxy; keep the client secret server-side only
+2. **Store tokens securely** - Encrypted database, secure keychain, or secure cookies
 3. **Never log tokens** - Mask in logs
-4. **Use HTTPS only** - Never transmit over HTTP
-5. **Set short access token lifetimes** - Refresh frequently
-6. **Validate state parameter** - Prevent CSRF attacks
-7. **Handle token expiration gracefully** - Auto-refresh before expiry
+4. **Use HTTPS only** - Never transmit tokens, or make token requests, over HTTP
+5. **Validate the `state` parameter** - Prevents CSRF attacks; use a short state TTL (delete after ~10 minutes)
+6. **Handle token expiration gracefully** - Refresh access tokens proactively before they expire
+7. **Implement token revocation** - Clear stored tokens on logout
+8. **Track authorization age** - Store the original authorization timestamp and re-authorize the user before the refresh token's 6-month deadline
+9. **Set short access token lifetimes where configurable** - Otherwise rely on the default 1-hour expiry and refresh frequently
 
 ---
 
@@ -208,13 +250,25 @@ curl https://api.spotify.com/v1/me \
 
 ### Authorization Errors
 
-User denies access or error occurs:
+User denies access or an error occurs during authorization. Spotify redirects to your `redirect_uri` with an `error` parameter:
 
 ```
 YOUR_REDIRECT_URI?error=access_denied&state=STATE
 ```
 
-### Token Errors
+### Authorization and Token Errors
+
+| Error | Description |
+|-------|-------------|
+| `access_denied` | User clicked "Cancel" on the consent screen |
+| `invalid_request` | Missing required parameter |
+| `invalid_client` | Invalid client credentials |
+| `invalid_grant` | Authorization code or refresh token is invalid, revoked, or expired. Refresh tokens expire 6 months after user authorization — do not retry; discard the token and restart the authorization flow. |
+| `invalid_scope` | Invalid scope requested |
+| `unauthorized_client` | Client not authorized for this grant type |
+| `unsupported_grant_type` | Invalid grant_type value |
+
+Example token error response:
 
 ```json
 {
@@ -223,15 +277,15 @@ YOUR_REDIRECT_URI?error=access_denied&state=STATE
 }
 ```
 
-| Error | Description |
-|-------|-------------|
-| `invalid_request` | Missing required parameter |
-| `invalid_client` | Invalid client credentials |
-| `invalid_grant` | Invalid/expired code or refresh token |
-| `unauthorized_client` | Client not authorized for this grant type |
-| `unsupported_grant_type` | Invalid grant_type value |
+### API Errors
 
-### API Errors (401)
+| Status | Cause | Action |
+|--------|-------|--------|
+| 401 | Access token expired or invalid | Refresh the token and retry |
+| 403 | Insufficient scope | Re-authorize with the needed scope |
+| 429 | Rate limited | Wait for the `Retry-After` duration and retry |
+
+Example 401 response:
 
 ```json
 {
@@ -241,8 +295,6 @@ YOUR_REDIRECT_URI?error=access_denied&state=STATE
   }
 }
 ```
-
-Handle by refreshing token and retrying request.
 
 ---
 
@@ -259,88 +311,6 @@ Handle by refreshing token and retrying request.
 
 ---
 
-## Complete Node.js Example (Authorization Code)
+## Runnable Implementation
 
-```javascript
-const express = require('express');
-const axios = require('axios');
-const crypto = require('crypto');
-
-const app = express();
-
-const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
-const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI = 'http://localhost:3000/callback';
-
-// Step 1: Redirect to Spotify
-app.get('/login', (req, res) => {
-  const state = crypto.randomBytes(16).toString('hex');
-  const scopes = 'user-read-private playlist-read-private';
-
-  res.redirect('https://accounts.spotify.com/authorize?' +
-    new URLSearchParams({
-      response_type: 'code',
-      client_id: CLIENT_ID,
-      scope: scopes,
-      redirect_uri: REDIRECT_URI,
-      state: state
-    })
-  );
-});
-
-// Step 2: Handle callback
-app.get('/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    return res.send(`Error: ${error}`);
-  }
-
-  // Step 3: Exchange code for token
-  const auth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-
-  const response = await axios.post(
-    'https://accounts.spotify.com/api/token',
-    new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: REDIRECT_URI
-    }),
-    {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    }
-  );
-
-  const { access_token, refresh_token, expires_in } = response.data;
-
-  // Store tokens securely, then use access_token for API calls
-  res.json({ access_token, refresh_token, expires_in });
-});
-
-// Refresh token endpoint
-app.get('/refresh', async (req, res) => {
-  const refresh_token = req.query.refresh_token;
-  const auth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-
-  const response = await axios.post(
-    'https://accounts.spotify.com/api/token',
-    new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refresh_token
-    }),
-    {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    }
-  );
-
-  res.json(response.data);
-});
-
-app.listen(3000);
-```
+For a complete, runnable server implementation of the Authorization Code flow (Express + TypeScript, including login/callback/refresh routes), see `examples/auth-flow.md`.

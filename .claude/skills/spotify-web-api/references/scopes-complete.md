@@ -2,6 +2,21 @@
 
 Request only the scopes needed for the application. Users see all requested scopes during authorization.
 
+## Contents
+
+- Images
+- Spotify Connect
+- Playback
+- Playlists
+- Follow
+- Listening History
+- Library
+- Users
+- Open Access (Partner Accounts)
+- Scope Combinations
+- No Scope Required
+- Best Practices
+
 ## Images
 
 | Scope | Description |
@@ -65,21 +80,24 @@ Request only the scopes needed for the application. Users see all requested scop
 
 **Endpoints (playlist-read-private):**
 - `GET /me/playlists`
-- `GET /users/{user_id}/playlists`
+- `GET /users/{user_id}/playlists` (Extended Quota Mode only)
 - `GET /playlists/{id}` (private playlists)
-- `GET /playlists/{id}/tracks` (private playlists)
+- `GET /playlists/{id}/items` (private playlists)
 
 **Endpoints (playlist-read-collaborative):**
 - Same as playlist-read-private, includes collaborative playlists
 
 **Endpoints (playlist-modify-private/public):**
-- `POST /users/{user_id}/playlists`
+- `POST /me/playlists`
+- `POST /users/{user_id}/playlists` (deprecated — see below)
 - `PUT /playlists/{id}`
-- `POST /playlists/{id}/tracks`
-- `PUT /playlists/{id}/tracks`
-- `DELETE /playlists/{id}/tracks`
+- `POST /playlists/{id}/items`
+- `PUT /playlists/{id}/items`
+- `DELETE /playlists/{id}/items`
 - `PUT /playlists/{id}/followers`
 - `DELETE /playlists/{id}/followers`
+
+**Old patterns:** `/playlists/{id}/tracks` is the deprecated predecessor of `/playlists/{id}/items` (same four verbs; the DELETE body's `tracks` array is now `items`), and `POST /users/{user_id}/playlists` is the deprecated predecessor of `POST /me/playlists`. `PUT /playlists/{id}/followers` / `DELETE /playlists/{id}/followers` are likewise deprecated in favor of the generic `PUT /me/library` / `DELETE /me/library` (see Library section). Development Mode apps do not have the deprecated forms; apps in Extended Quota Mode are unaffected and can keep using them. Also note: `GET /playlists/{id}/items` is documented as accessible only for playlists the current user owns or collaborates on — for any other playlist (including Spotify-owned editorial playlists) it returns `403 Forbidden`, not a metadata-only body. The metadata-only fallback belongs to `GET /playlists/{id}`, whose response simply omits the `items` object for third-party playlists. The `/items` reference page states the restriction with no quota-mode qualifier; the February 2026 migration guide scopes it to Development Mode apps.
 
 ---
 
@@ -97,6 +115,8 @@ Request only the scopes needed for the application. Users see all requested scop
 **Endpoints (user-follow-modify):**
 - `PUT /me/following`
 - `DELETE /me/following`
+
+**Note:** `PUT /me/following` / `DELETE /me/following` and `GET /me/following/contains` are deprecated in favor of the generic `PUT /me/library` / `DELETE /me/library` and `GET /me/library/contains` (see Library section), using `spotify:artist:...` / `spotify:user:...` URIs. Development Mode apps do not have the per-type follow endpoints; apps in Extended Quota Mode are unaffected.
 
 ---
 
@@ -138,6 +158,7 @@ Request only the scopes needed for the application. Users see all requested scop
 - `GET /me/shows/contains`
 - `GET /me/audiobooks`
 - `GET /me/audiobooks/contains`
+- `GET /me/library/contains` (generic check across all content types, incl. artists/users/playlists; query param `uris`, max 40)
 
 **Endpoints (user-library-modify):**
 - `PUT /me/tracks`
@@ -150,6 +171,9 @@ Request only the scopes needed for the application. Users see all requested scop
 - `DELETE /me/shows`
 - `PUT /me/audiobooks`
 - `DELETE /me/audiobooks`
+- `PUT /me/library` / `DELETE /me/library` (generic save/remove across all content types, incl. artists/users/playlists; query param `uris`, max 40 — also the replacement for the follow/unfollow endpoints under Follow, below)
+
+**Note:** The per-type endpoints above take comma-separated `ids` — max 50 for tracks, shows, episodes and audiobooks, but max 20 for albums (`GET /me/albums/contains`). The generic `/me/library` endpoints take full Spotify `uris` instead (max 40, uniform across every type) and are the only library endpoints available to Development Mode apps; apps in Extended Quota Mode can keep using either form. See the Library section of `references/endpoints-complete.md` for the per-endpoint caps and for the unresolved conflict in Spotify's docs over whether `spotify:artist:` URIs are accepted by `PUT`/`DELETE /me/library` (they are listed for `GET /me/library/contains`).
 
 ---
 
@@ -159,6 +183,7 @@ Request only the scopes needed for the application. Users see all requested scop
 |-------|-------------|
 | `user-read-email` | Read user's email address |
 | `user-read-private` | Read user's subscription details (country, product) |
+| `user-personalized` | Access personalized content/recommendations for the user |
 
 **Endpoints:**
 - `GET /me` (returns additional fields with these scopes)
@@ -257,33 +282,45 @@ user-read-private
 
 ## No Scope Required
 
-These endpoints work without user authorization (Client Credentials flow):
+These endpoints need no user authorization (Client Credentials flow). Needing no scope is not
+the same as being callable — several are restricted by quota mode or by app registration
+date. Markers below match the "Endpoint Availability" section of
+`references/endpoints-complete.md`, which is authoritative.
+
+Callable in both quota modes:
 
 - `GET /albums/{id}`
-- `GET /albums`
 - `GET /albums/{id}/tracks`
 - `GET /artists/{id}`
-- `GET /artists`
 - `GET /artists/{id}/albums`
-- `GET /artists/{id}/top-tracks`
-- `GET /artists/{id}/related-artists`
 - `GET /tracks/{id}`
-- `GET /tracks`
-- `GET /audio-features/{id}`
-- `GET /audio-features`
-- `GET /audio-analysis/{id}`
 - `GET /search`
-- `GET /recommendations`
-- `GET /recommendations/available-genre-seeds`
+- `GET /playlists/{id}` (public playlists only)
+
+`GET /playlists/{id}/items` is **not** in this list: its reference page requires
+`playlist-read-private` and returns `403` unless the caller owns or collaborates on the
+playlist, so a Client Credentials token cannot read it. Use `GET /playlists/{id}` for public
+playlist metadata.
+
+Extended Quota Mode only (unavailable to Development Mode apps):
+
+- `GET /albums`, `GET /artists`, `GET /tracks` (batch multi-ID — fetch singly instead)
+- `GET /artists/{id}/top-tracks`
 - `GET /browse/new-releases`
-- `GET /browse/featured-playlists`
-- `GET /browse/categories`
-- `GET /browse/categories/{id}`
-- `GET /browse/categories/{id}/playlists`
+- `GET /browse/categories`, `GET /browse/categories/{id}`
 - `GET /markets`
 - `GET /users/{user_id}` (public profile only)
-- `GET /playlists/{id}` (public playlists only)
-- `GET /playlists/{id}/tracks` (public playlists only)
+
+Restricted (only apps whose extended access predates the 2024-11-27 cutoff; applying for
+extended quota today does not restore access, and the failure surfaces as `404`):
+
+- `GET /artists/{id}/related-artists`
+- `GET /audio-features/{id}`, `GET /audio-features`
+- `GET /audio-analysis/{id}`
+- `GET /recommendations`
+- `GET /recommendations/available-genre-seeds`
+- `GET /browse/featured-playlists`
+- `GET /browse/categories/{id}/playlists`
 
 ---
 

@@ -49,15 +49,20 @@ curl -s "$BASE/search?q=genre:rock+year:2020-2024&type=track&limit=10" \
 curl -s "$BASE/tracks/6rqhFgbbKwnb9MLmUQDhG6" \
   -H "Authorization: Bearer $TOKEN"
 
-# Get multiple tracks
+# Get multiple tracks by ID (batch fetch)
+# Requires Extended Quota Mode - Development Mode apps must fetch tracks one
+# at a time instead (see "Get track by ID" above).
 curl -s "$BASE/tracks?ids=6rqhFgbbKwnb9MLmUQDhG6,4iV5W9uYEdYUVa79Axb7Rh" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get audio features for track
+# Restricted - only available to apps with pre-existing Extended Quota Mode
+# access; unavailable to Development Mode apps and newly registered apps.
 curl -s "$BASE/audio-features/6rqhFgbbKwnb9MLmUQDhG6" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get recommendations based on seed tracks
+# Restricted - same access requirement as audio features above.
 curl -s "$BASE/recommendations?seed_tracks=6rqhFgbbKwnb9MLmUQDhG6&limit=10" \
   -H "Authorization: Bearer $TOKEN"
 
@@ -69,36 +74,51 @@ curl -s "$BASE/recommendations?seed_tracks=6rqhFgbbKwnb9MLmUQDhG6&limit=10" \
 curl -s "$BASE/me/tracks?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
-# Save tracks to library
-curl -s -X PUT "$BASE/me/tracks?ids=6rqhFgbbKwnb9MLmUQDhG6,4iV5W9uYEdYUVa79Axb7Rh" \
+# Save items to library (generic endpoint - accepts track/album/episode/show/
+# audiobook/user/playlist URIs, max 40 per request; `uris` is a query param,
+# not a JSON body). Artist URIs are used below to follow artists, but Spotify's
+# PUT/DELETE reference pages omit artist from this list while the February 2026
+# migration guide shows it - see the Library section of
+# references/endpoints-complete.md.
+curl -s -X PUT "$BASE/me/library?uris=spotify%3Atrack%3A6rqhFgbbKwnb9MLmUQDhG6,spotify%3Atrack%3A4iV5W9uYEdYUVa79Axb7Rh" \
   -H "Authorization: Bearer $TOKEN"
 
-# Remove tracks from library
-curl -s -X DELETE "$BASE/me/tracks?ids=6rqhFgbbKwnb9MLmUQDhG6" \
+# Remove items from library
+curl -s -X DELETE "$BASE/me/library?uris=spotify%3Atrack%3A6rqhFgbbKwnb9MLmUQDhG6" \
   -H "Authorization: Bearer $TOKEN"
 
-# Check if tracks are saved
-curl -s "$BASE/me/tracks/contains?ids=6rqhFgbbKwnb9MLmUQDhG6,4iV5W9uYEdYUVa79Axb7Rh" \
+# Check if items are saved (returns a bare boolean array, e.g. [false,true])
+curl -s "$BASE/me/library/contains?uris=spotify%3Atrack%3A6rqhFgbbKwnb9MLmUQDhG6,spotify%3Atrack%3A4iV5W9uYEdYUVa79Axb7Rh" \
   -H "Authorization: Bearer $TOKEN"
+
+# Old pattern: PUT/DELETE /me/tracks and GET /me/tracks/contains (ids=, max 50)
+# are the deprecated per-type predecessors of /me/library above. They still
+# work for apps with Extended Quota Mode access; Development Mode apps must
+# use /me/library. The same replacement applies to /me/albums, /me/shows,
+# /me/episodes, and /me/audiobooks.
 
 # =============================================================================
 # PLAYLISTS
 # =============================================================================
+# Note: /playlists/{id}/tracks (and the "tracks" request/response key) is the
+# deprecated predecessor of /playlists/{id}/items (and "items"). Development
+# Mode apps must use /items; apps with Extended Quota Mode access may still
+# use the old /tracks paths.
 
 # Get user's playlists
 curl -s "$BASE/me/playlists?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get playlist by ID
-curl -s "$BASE/playlists/37i9dQZF1DXcBWIGoYBM5M" \
+curl -s "$BASE/playlists/PLAYLIST_ID" \
   -H "Authorization: Bearer $TOKEN"
 
-# Get playlist tracks
-curl -s "$BASE/playlists/37i9dQZF1DXcBWIGoYBM5M/tracks?limit=100" \
+# Get playlist items
+curl -s "$BASE/playlists/PLAYLIST_ID/items?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
-# Create playlist
-curl -s -X POST "$BASE/users/USER_ID/playlists" \
+# Create playlist (for the current user)
+curl -s -X POST "$BASE/me/playlists" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -107,8 +127,8 @@ curl -s -X POST "$BASE/users/USER_ID/playlists" \
     "public": false
   }'
 
-# Add tracks to playlist
-curl -s -X POST "$BASE/playlists/PLAYLIST_ID/tracks" \
+# Add items to playlist (max 100 URIs per request)
+curl -s -X POST "$BASE/playlists/PLAYLIST_ID/items" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -119,18 +139,18 @@ curl -s -X POST "$BASE/playlists/PLAYLIST_ID/tracks" \
     "position": 0
   }'
 
-# Remove tracks from playlist
-curl -s -X DELETE "$BASE/playlists/PLAYLIST_ID/tracks" \
+# Remove items from playlist
+curl -s -X DELETE "$BASE/playlists/PLAYLIST_ID/items" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "tracks": [
+    "items": [
       {"uri": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"}
     ]
   }'
 
-# Reorder tracks in playlist
-curl -s -X PUT "$BASE/playlists/PLAYLIST_ID/tracks" \
+# Reorder items in playlist
+curl -s -X PUT "$BASE/playlists/PLAYLIST_ID/items" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -174,7 +194,7 @@ curl -s -X PUT "$BASE/me/player/play" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "context_uri": "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    "context_uri": "spotify:playlist:PLAYLIST_ID",
     "offset": {"position": 0}
   }'
 
@@ -243,10 +263,13 @@ curl -s "$BASE/artists/0OdUWJ0sBjDrqHygGUXeCF/albums?include_groups=album,single
   -H "Authorization: Bearer $TOKEN"
 
 # Get artist's top tracks
+# Requires Extended Quota Mode - unavailable to Development Mode apps.
 curl -s "$BASE/artists/0OdUWJ0sBjDrqHygGUXeCF/top-tracks?market=US" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get related artists
+# Restricted - only available to apps with pre-existing Extended Quota Mode
+# access; unavailable to Development Mode apps and newly registered apps.
 curl -s "$BASE/artists/0OdUWJ0sBjDrqHygGUXeCF/related-artists" \
   -H "Authorization: Bearer $TOKEN"
 
@@ -263,6 +286,7 @@ curl -s "$BASE/albums/4aawyAB9vmqN3uQ7FjRGTy/tracks?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get new releases
+# Requires Extended Quota Mode - unavailable to Development Mode apps.
 curl -s "$BASE/browse/new-releases?limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
@@ -274,34 +298,47 @@ curl -s "$BASE/browse/new-releases?limit=20" \
 curl -s "$BASE/me/following?type=artist&limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
-# Follow artists
-curl -s -X PUT "$BASE/me/following?type=artist&ids=0OdUWJ0sBjDrqHygGUXeCF" \
+# Follow artists (generic library endpoint - accepts Spotify URIs)
+# Handle a 400 here: the PUT /me/library reference page does not list artist
+# among its accepted URI types, though the migration guide's own before/after
+# example follows an artist exactly this way.
+curl -s -X PUT "$BASE/me/library?uris=spotify%3Aartist%3A0OdUWJ0sBjDrqHygGUXeCF" \
   -H "Authorization: Bearer $TOKEN"
 
 # Unfollow artists
-curl -s -X DELETE "$BASE/me/following?type=artist&ids=0OdUWJ0sBjDrqHygGUXeCF" \
+curl -s -X DELETE "$BASE/me/library?uris=spotify%3Aartist%3A0OdUWJ0sBjDrqHygGUXeCF" \
   -H "Authorization: Bearer $TOKEN"
 
 # Check if following artists
-curl -s "$BASE/me/following/contains?type=artist&ids=0OdUWJ0sBjDrqHygGUXeCF" \
+curl -s "$BASE/me/library/contains?uris=spotify%3Aartist%3A0OdUWJ0sBjDrqHygGUXeCF" \
   -H "Authorization: Bearer $TOKEN"
+
+# Old pattern: PUT/DELETE /me/following and GET /me/following/contains (type=,
+# ids=, max 50) are the deprecated per-type predecessors of /me/library above.
+# They still work for apps with Extended Quota Mode access; Development Mode
+# apps must use /me/library.
 
 # =============================================================================
 # BROWSE
 # =============================================================================
 
 # Get browse categories
+# Requires Extended Quota Mode - unavailable to Development Mode apps.
 curl -s "$BASE/browse/categories?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get category playlists
+# Restricted - only available to apps with pre-existing Extended Quota Mode
+# access; unavailable to Development Mode apps and newly registered apps.
 curl -s "$BASE/browse/categories/party/playlists?limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get featured playlists
+# Restricted - same access requirement as category playlists above.
 curl -s "$BASE/browse/featured-playlists?limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get available genre seeds
+# Restricted - same access requirement as category playlists above.
 curl -s "$BASE/recommendations/available-genre-seeds" \
   -H "Authorization: Bearer $TOKEN"
