@@ -133,7 +133,62 @@ The codebase follows a two-layer architecture:
 - The Lambda handler in `src/index.ts` routes requests to action handlers based on the path, path parameters, or `action` query parameter
 - Environment variables are loaded from `.env` file (not committed to git)
 
+## Known Issues
+
+Latent traps that are **not** visible from the code they affect. Kept here rather
+than in a dated changelog entry so they don't scroll out of sight.
+
+### `ArchiveAction`'s `idThrottleMs` can never fire
+
+`ArchiveAction` declares `idThrottleMs = 60 * 1000`, but `getID()` returns
+`archive:${this.created_at}` — a fresh timestamp per construction. The throttle
+check in `performAction` (`src/actions/action.ts`) calls
+`dynamo.getActionHistory(await action.getID(), since)`, which is an **exact-match
+`KeyConditionExpression` on that id**. A newly minted id can never match a stored
+one, so the lookup always misses and the action always runs.
+
+- Every action id must be **stable across invocations** for throttling to work.
+  `MagicPromoteAction` gets this right (`promote:${currentTrack.uri}`);
+  `ArchiveAction` does not.
+- This matters more than it looks: `ArchiveAction` runs on `frequent-crawling`
+  and opens with `Dynamo.tracksWithLiveStatus()`, a **full table scan**. The
+  declared throttle is the only apparent guardrail on it, and it isn't one.
+- Fix is to key the id on the period being archived, not the clock — but note
+  that a stable id also means `forStorage`'s `ttl` and the `action_history` row
+  start colliding between runs, so it isn't a one-liner.
+
+### `ListenSequence`'s ordering invariant is enforced by nothing
+
+The watermark is only correct if the playback pass keeps **one listen per
+mutation set, ascending by `played_at`, watermark set last**. That is stated in a
+comment in `ProcessPlaybackHistoryAction` and nowhere else.
+
+`performAction` runs mutation *sets* sequentially but fires everything **within**
+a set as one `Promise.all`. So chunking the playback path for throughput — the
+way `ProcessManualTriage` and `ArchiveAction` already do via
+`DYNAMO_WRITE_CHUNK` — would silently let the watermark advance past a failed
+write, and re-count those listens on the next run. `src/__tests__/listen-sequence.test.ts`
+would not catch it: it drives mutations by hand in a loop rather than through the
+real runner.
+
+The durable fix is to move "which sets still run after an earlier failure" into
+`performAction`, or to make the listen write idempotent
+(`ConditionExpression` on `last_seen.played_at`) so ordering stops being
+load-bearing at all.
+
 ## Changelog
+
+### 2026-08-02 - Adversarial-Review Fixes (High Priority)
+
+- **Listen writes are counted exactly once again.** A single failed listen write used to abort the action before the (deliberately last) watermark mutation ran, so every listen already written that pass was re-counted on the next run, and every run after, until the failure cleared. A run-scoped `ListenSequence` now advances the watermark only across an unbroken prefix of successful writes and skips the rest of the batch after a failure — the tail is deferred to the next run, which is what the watermark is for
+- Supporting: `MutationFailureMode = 'abort-action' | 'record-and-continue'` (default `'abort-action'`, unchanged for every existing mutation) and `MutationIntent = 'run' | 'skip'` plus a `'skipped'` completion state, both on the `Mutation` base class
+- **`'promoted'` rows now reconcile against liked status, not Current membership.** Reaching Current always implies the track was saved, and it leaves Current legitimately (archived, or hand-moved to Starred) — being unliked is what actually marks it dropped. `'inbox'` rows still reconcile against Inbox membership; `null` status still means unknown
+- That deleted `archivedTrackIds()` and the per-run walk over every archive playlist. `isArchivePlaylistName` is off the settings object; `buildArchiveMatcher` stays exported as a test oracle
+- **`buildMyFn` → `buildArchiveNamer`**, exported, and no longer normalizing onto its captured `prefix` — each call used to append another space, forking a dev archive playlist per aged track and then marking those tracks `'removed'`. Round-trip tests now feed the namer's real repeated output into the matcher
+- **A missing Inbox or Current no longer kills the whole pass** — both paths use `optionalPlaylist` and skip only the half that lost its evidence. Skipping marks nothing removed
+- **`getTracks()` retries `UnprocessedKeys`** and throws rather than reporting unread keys as missing rows — `ProcessManualTriage` reads "no row" as "never triaged" and would write a spurious `'promote'`. Unbounded mutation sets in `ProcessManualTriage` and the reconciliation sweep are chunked into sequential sets of 25
+- Still open: manual Current → Inbox remains undetected (a hand-moved track stays liked, so it stays `'promoted'`), and findings #6–#13 from the handoff are untouched
+- See `changelog/2026-08-02_adversarial-review-high-priority-fixes.md`
 
 ### 2026-08-02 - Track Status Field + Manual-Change Detection
 

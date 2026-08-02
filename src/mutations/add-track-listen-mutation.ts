@@ -1,5 +1,6 @@
-import { Mutation, MutationTypes } from './mutation'
+import { Mutation, MutationIntent, MutationTypes } from './mutation'
 import { Dynamo, UpdateTrackParams } from '../db/dynamo'
+import { ListenSequence } from './listen-sequence'
 
 export type AddTrackListenData = {
   track: { id: string }
@@ -8,6 +9,20 @@ export type AddTrackListenData = {
 export class AddTrackListenMutation extends Mutation<AddTrackListenData> {
   mutationType: MutationTypes = 'add-track-listen'
 
+  /**
+   * `sequence` is only passed by the playback pass, where these writes advance a
+   * watermark. There, a failure must not unwind the action — the watermark
+   * mutation runs last and has to survive to record how far the pass actually
+   * got, or every listen already written gets counted again on the next run.
+   * Without a sequence (manual triage, `increment_by: 0`) nothing downstream
+   * cares, so failures abort as usual.
+   */
+  constructor(data: AddTrackListenData, private sequence?: ListenSequence) {
+    super(data)
+
+    if (sequence) this.failureMode = 'record-and-continue'
+  }
+
   transformData(data: AddTrackListenData): AddTrackListenData {
     return {
       ...data,
@@ -15,7 +30,19 @@ export class AddTrackListenMutation extends Mutation<AddTrackListenData> {
     }
   }
 
+  protected intent(): MutationIntent {
+    return this.sequence?.status === 'halted' ? 'skip' : 'run'
+  }
+
   protected async mutate({ dynamo }: { dynamo: Dynamo }) {
-    dynamo.updateTrack(this.data.track, this.data)
+    try {
+      await dynamo.updateTrack(this.data.track, this.data)
+    } catch (error) {
+      this.sequence?.halt()
+      throw error
+    }
+
+    const playedAt = this.data.seen?.played_at
+    if (typeof playedAt === 'number') this.sequence?.recordSuccess(playedAt)
   }
 }

@@ -1,6 +1,7 @@
 import { Action } from './action'
 import { Spotify } from '../spotify'
 import { AddTrackListenMutation } from '../mutations/add-track-listen-mutation'
+import { ListenSequence } from '../mutations/listen-sequence'
 import { Mutation } from '../mutations/mutation'
 import { UpdateLastPlayedProcessedMutation } from '../mutations/update-last-played-processed-mutation'
 import { Dynamo } from '../db/dynamo'
@@ -64,8 +65,6 @@ export class ProcessPlaybackHistoryAction implements Action {
       this.user.lastPlayedAtProcessedTimestamp,
     )
 
-    let mostRecentPlayedAt: number = 0
-
     playedItems = playedItems
       .sort((a, b) => Date.parse(a.played_at) - Date.parse(b.played_at))
       .filter(
@@ -79,8 +78,6 @@ export class ProcessPlaybackHistoryAction implements Action {
 
     const trackSeenArgs = playedItems.map((pi) => {
       const playedAt = Date.parse(pi.played_at)
-      if (playedAt > mostRecentPlayedAt) mostRecentPlayedAt = playedAt
-
       const uri = pi.context?.uri
       const playlistId = playlistIdFromContextUri(uri)
 
@@ -103,15 +100,22 @@ export class ProcessPlaybackHistoryAction implements Action {
       `[ProcessPlaybackHistoryAction] ${trackSeenArgs.length} listens, ${attributed} attributed to a triage stage`,
     )
 
+    // One listen per mutation set, so the sets run strictly in ascending
+    // played_at order and the watermark below can stop at the exact point the
+    // writes stopped landing. See ListenSequence for why that matters.
+    const sequence = new ListenSequence(
+      this.user.lastPlayedAtProcessedTimestamp,
+    )
+
     const mutations: Mutation<any>[][] = trackSeenArgs.map((args) => [
-      new AddTrackListenMutation(args),
+      new AddTrackListenMutation(args, sequence),
     ])
 
     mutations.push([
-      new UpdateLastPlayedProcessedMutation({
-        userId: dynamo.user.id,
-        ts: mostRecentPlayedAt,
-      }),
+      new UpdateLastPlayedProcessedMutation(
+        { userId: dynamo.user.id },
+        sequence,
+      ),
     ])
 
     return mutations
