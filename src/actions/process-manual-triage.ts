@@ -1,4 +1,5 @@
-import { Dynamo } from '../db/dynamo'
+import { chunk } from 'lodash'
+import { Dynamo, DYNAMO_WRITE_CHUNK } from '../db/dynamo'
 import { AddTrackListenMutation } from '../mutations/add-track-listen-mutation'
 import { Mutation } from '../mutations/mutation'
 import { Spotify } from '../spotify'
@@ -18,104 +19,60 @@ export class ProcessManualTriage implements Action {
     return `process-manual-triage:${this.created_at}`
   }
 
-  private async performCurrent({
-    dynamo,
-  }: {
-    dynamo: Dynamo
-  }): Promise<Mutation<any>[][]> {
-    const { current } = await getTriageInfo(this.spotify)
+  /**
+   * Backfills the triage log for tracks that reached a playlist without going
+   * through the app — dragged in by hand, so nothing ever recorded them.
+   *
+   * Inbox and Current are the same job twice: the action that marks a track as
+   * already accounted for is also the one written for those that aren't.
+   */
+  private async backfillStage(
+    dynamo: Dynamo,
+    playlist: { id: string },
+    action_type: TrackTriageActionType,
+  ): Promise<Mutation<any>[][]> {
     const playlistTracks = await this.spotify.tracksForPlaylist({
-      id: current.id,
+      id: playlist.id,
     })
 
-    const ids = playlistTracks.map((track) => track.track.id)
-    const trackRecords = await dynamo.getTracks(ids)
+    const trackRecords = await dynamo.getTracks(
+      playlistTracks.map((track) => track.track.id),
+    )
 
-    const uninboxedTracks = playlistTracks.filter((data) => {
-      const trackRecord = trackRecords[data.track.id]
+    const untriaged = playlistTracks.filter(
+      (data) =>
+        !trackRecords[data.track.id]?.triage_actions?.some(
+          (action) => action.action_type === action_type,
+        ),
+    )
 
-      if (trackRecord?.triage_actions) {
-        for (let action of trackRecord.triage_actions) {
-          if (action.action_type === 'promote') {
-            return false
-          }
-        }
-      }
-
-      return true
-    })
-
-    const mutations = uninboxedTracks.map((track) => {
-      const date = new Date(track.added_at)
-      const played_at = date.getTime()
-      const uri = track.track.uri
+    const mutations = untriaged.map((track) => {
+      const played_at = new Date(track.added_at).getTime()
 
       return new AddTrackListenMutation({
         track: { id: track.track.id },
         increment_by: 0,
-        triageActions: [{ action_at: played_at, action_type: 'promote' }],
+        triageActions: [{ action_at: played_at, action_type }],
         seen: {
-          uri,
-          played_at,
-          exactness: 'playlist-addition' as const,
-        },
-      })
-    })
-    return []
-  }
-
-  private async performInbox({
-    dynamo,
-  }: {
-    dynamo: Dynamo
-  }): Promise<Mutation<any>[][]> {
-    const { inbox } = await getTriageInfo(this.spotify)
-    const playlistTracks = await this.spotify.tracksForPlaylist({
-      id: inbox.id,
-    })
-
-    const ids = playlistTracks.map((track) => track.track.id)
-    const trackRecords = await dynamo.getTracks(ids)
-
-    const uninboxedTracks = playlistTracks.filter((data) => {
-      const trackRecord = trackRecords[data.track.id]
-
-      if (trackRecord?.triage_actions) {
-        for (let action of trackRecord.triage_actions) {
-          if (action.action_type === 'inboxed') {
-            return false
-          }
-        }
-      }
-
-      return true
-    })
-
-    const mutations = uninboxedTracks.map((track) => {
-      const date = new Date(track.added_at)
-      const played_at = date.getTime()
-      const uri = track.track.uri
-
-      return new AddTrackListenMutation({
-        track: { id: track.track.id },
-        increment_by: 0,
-        triageActions: [{ action_at: played_at, action_type: 'inboxed' }],
-        seen: {
-          uri,
+          uri: track.track.uri,
           played_at,
           exactness: 'playlist-addition' as const,
         },
       })
     })
 
-    return [mutations]
+    return chunk(mutations, DYNAMO_WRITE_CHUNK)
   }
 
   async perform({ dynamo }: { dynamo: Dynamo }): Promise<Mutation<any>[][]> {
-    const performInbox = this.performInbox({ dynamo })
-    const performCurrent = this.performCurrent({ dynamo })
+    const { inbox, current } = await getTriageInfo(this.spotify)
 
-    return [...(await performInbox), ...(await performCurrent)]
+    const [inboxSets, currentSets] = await Promise.all([
+      this.backfillStage(dynamo, inbox, 'inboxed'),
+      this.backfillStage(dynamo, current, 'promote'),
+    ])
+
+    return [...inboxSets, ...currentSets]
   }
 
   async forStorage(mutations: Mutation<any>[]): Promise<ActionHistoryItemData> {
