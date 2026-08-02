@@ -7,6 +7,8 @@ import {
   BatchWriteCommand,
   PutCommand,
   DeleteCommand,
+  ScanCommand,
+  ScanCommandInput,
   QueryCommandInput,
   UpdateCommandInput,
   GetCommandInput,
@@ -30,6 +32,9 @@ const BATCH_GET_RETRY_BASE_MS = 50
  */
 export const DYNAMO_WRITE_CHUNK = 25
 
+/** All the status reconciliation sweep reads off a track row. */
+export type TrackStatusRow = Pick<TrackItem, 'id' | 'status'>
+
 /** Shared by every retried Dynamo call below. */
 function isDynamoThroughputError(error: any): boolean {
   const errorName = error.name || error.__type || ''
@@ -50,6 +55,26 @@ export class Dynamo {
   /** Inverse of `gId`: the bare Spotify id back out of a stored key. */
   ungId(id: string) {
     return id.match(/:(.+)/)?.[1] ?? id
+  }
+
+  /**
+   * Appends the denormalized-status clauses to an UpdateCommand being built.
+   *
+   * Every write of `status` routes through here, so the reserved-word alias and
+   * the `status_changed_at` it must always travel with cannot drift apart
+   * between the three call sites.
+   */
+  private appendStatusClause(
+    parts: string[],
+    names: NonNullable<UpdateCommandInput['ExpressionAttributeNames']>,
+    values: NonNullable<UpdateCommandInput['ExpressionAttributeValues']>,
+    { status, changed_at }: { status: TrackStatus; changed_at: number },
+  ) {
+    parts.push('#status = :status', 'status_changed_at = :status_changed_at')
+    // `status` is a DynamoDB reserved word
+    names['#status'] = 'status'
+    values[':status'] = status
+    values[':status_changed_at'] = changed_at
   }
 
   async getActionHistory(id: string, since: number) {
@@ -187,20 +212,41 @@ export class Dynamo {
   ) {
     const id = this.gId(trackId)
 
+    const expressionParts = [
+      '#triage_actions = list_append(if_not_exists(#triage_actions, :empty_list), :location)',
+    ]
+    const ExpressionAttributeNames: UpdateCommandInput['ExpressionAttributeNames'] =
+      {
+        '#triage_actions': 'triage_actions',
+      }
+    const ExpressionAttributeValues: UpdateCommandInput['ExpressionAttributeValues'] =
+      {
+        ':location': [action],
+        ':empty_list': [],
+      }
+
+    // Written in the same UpdateCommand as the log entry it mirrors, so the
+    // denormalized status cannot drift from `triage_actions`. Status-neutral
+    // actions ('upvote') leave the existing value alone.
+    const status = statusForTriageActions([action])
+
+    if (status) {
+      this.appendStatusClause(
+        expressionParts,
+        ExpressionAttributeNames,
+        ExpressionAttributeValues,
+        status,
+      )
+    }
+
     const params: UpdateCommandInput = {
       TableName: 'track',
       Key: {
         id,
       },
-      UpdateExpression:
-        'SET #triage_actions = list_append(if_not_exists(#triage_actions, :empty_list), :location)',
-      ExpressionAttributeNames: {
-        '#triage_actions': 'triage_actions',
-      },
-      ExpressionAttributeValues: {
-        ':location': [action],
-        ':empty_list': [],
-      },
+      UpdateExpression: 'SET ' + expressionParts.join(', '),
+      ExpressionAttributeNames,
+      ExpressionAttributeValues,
       ReturnValues: 'ALL_NEW',
     }
 
@@ -220,6 +266,8 @@ export class Dynamo {
     const id = this.gId(trackId)
 
     const ExpressionAttributeValues: UpdateCommandInput['ExpressionAttributeValues'] =
+      {}
+    const ExpressionAttributeNames: UpdateCommandInput['ExpressionAttributeNames'] =
       {}
 
     const expressionParts = []
@@ -246,6 +294,18 @@ export class Dynamo {
       )
       ExpressionAttributeValues[':empty_list'] = []
       ExpressionAttributeValues[':app_actions'] = triageActions
+
+      // Same reasoning as addTrackTriageAction: keep the denormalized status in
+      // the same write as the log entries it is derived from.
+      const status = statusForTriageActions(triageActions)
+      if (status) {
+        this.appendStatusClause(
+          expressionParts,
+          ExpressionAttributeNames,
+          ExpressionAttributeValues,
+          status,
+        )
+      }
     }
 
     const params: UpdateCommandInput = {
@@ -255,6 +315,11 @@ export class Dynamo {
       },
       UpdateExpression: 'SET ' + expressionParts.join(', '),
       ExpressionAttributeValues,
+      // DynamoDB rejects an empty ExpressionAttributeNames, so only send it
+      // when the status clause actually needed a name alias.
+      ...(Object.keys(ExpressionAttributeNames).length
+        ? { ExpressionAttributeNames }
+        : {}),
       ReturnValues: 'ALL_NEW',
     }
 
@@ -359,6 +424,100 @@ export class Dynamo {
     }
 
     return Object.values(result)
+  }
+
+  /**
+   * The rows whose status still claims they are somewhere in the triage flow.
+   *
+   * Still a full table scan: the `track` table has no index on status and rows
+   * are never deleted, so cost grows with every track ever seen. Index `status`
+   * before adding callers.
+   *
+   * The filter and projection are worth having anyway — a scan is billed on
+   * pre-filter item size, so they buy payload, unmarshalling and Lambda memory
+   * rather than RCU. `triage_actions` is append-only and by far the fattest
+   * attribute on the row; the sweep reads neither it nor anything else beyond
+   * the two fields below.
+   */
+  async tracksWithLiveStatus() {
+    const items: TrackStatusRow[] = []
+    let ExclusiveStartKey: ScanCommandInput['ExclusiveStartKey']
+
+    do {
+      const params: ScanCommandInput = {
+        TableName: 'track',
+        FilterExpression:
+          'begins_with(id, :prefix) AND #status IN (:inbox, :promoted)',
+        // `status` is a DynamoDB reserved word
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':prefix': this.gId(''),
+          ':inbox': 'inbox' satisfies TrackStatus,
+          ':promoted': 'promoted' satisfies TrackStatus,
+        },
+        ProjectionExpression: 'id, #status',
+        ExclusiveStartKey,
+      }
+
+      // An unbounded scan on a per-minute path is exactly what trips throughput
+      // limits, and a throttled page here would silently truncate the sweep into
+      // "these rows vanished". Same backoff every other scan in this file uses.
+      const response = await retryWithBackoff(
+        () => AWS.docs.send(new ScanCommand(params)),
+        {
+          maxRetries: 8,
+          initialDelay: 500,
+          maxDelay: 30000,
+          backoffMultiplier: 2,
+          shouldRetry: isDynamoThroughputError,
+          onRetry: (_error, attempt, nextDelay) => {
+            console.log(
+              `⚠️ DynamoDB throughput exceeded scanning tracks (attempt ${attempt}) after ${nextDelay}ms`,
+            )
+          },
+        },
+      )
+
+      if (response.Items) items.push(...(response.Items as TrackStatusRow[]))
+
+      ExclusiveStartKey = response.LastEvaluatedKey
+    } while (ExclusiveStartKey)
+
+    console.log(`[Dynamo] scanned ${items.length} rows with a live status`)
+
+    // Hand back bare Spotify ids, matching getTracks()
+    return items.map((item) => ({ ...item, id: this.ungId(item.id) }))
+  }
+
+  async setTrackStatus(
+    { id: trackId }: { id: string },
+    status: TrackStatus,
+    changed_at: number,
+  ) {
+    const id = this.gId(trackId)
+
+    const expressionParts: string[] = []
+    const ExpressionAttributeNames: UpdateCommandInput['ExpressionAttributeNames'] =
+      {}
+    const ExpressionAttributeValues: UpdateCommandInput['ExpressionAttributeValues'] =
+      {}
+
+    this.appendStatusClause(
+      expressionParts,
+      ExpressionAttributeNames,
+      ExpressionAttributeValues,
+      { status, changed_at },
+    )
+
+    const params: UpdateCommandInput = {
+      TableName: 'track',
+      Key: { id },
+      UpdateExpression: 'SET ' + expressionParts.join(', '),
+      ExpressionAttributeNames,
+      ExpressionAttributeValues,
+    }
+
+    await AWS.docs.send(new UpdateCommand(params))
   }
 
   async updateAccessToken(
@@ -741,6 +900,38 @@ export type UpdateTrackParams = {
   seen?: TrackSeenContext
   increment_by?: number
   triageActions?: TrackTriageAction[]
+}
+
+const STATUS_BY_TRIAGE_ACTION: Record<
+  TrackTriageActionType,
+  TrackStatus | null
+> = {
+  inboxed: 'inbox',
+  promote: 'promoted',
+  // Only `demoteTrack()` emits 'remove', so this is the explicit demote signal.
+  remove: 'removed',
+  // Status-neutral on purpose. `promoteTrack()` pushes 'upvote' last on EVERY
+  // promote, after the conditional 'promote' entry — mapping it to a state
+  // would clobber 'promoted' on every promotion to Current.
+  upvote: null,
+}
+
+/**
+ * The status implied by a batch of triage actions: the last action that maps to
+ * a state wins. Returns the `action_at` alongside it so the denormalized field
+ * and the log it mirrors always agree on timing. Undefined when no action in
+ * the batch carries a state.
+ */
+export function statusForTriageActions(actions: TrackTriageAction[]) {
+  for (let i = actions.length - 1; i >= 0; i -= 1) {
+    const status = STATUS_BY_TRIAGE_ACTION[actions[i].action_type]
+
+    if (status) {
+      return { status, changed_at: actions[i].action_at }
+    }
+  }
+
+  return
 }
 
 async function getUser(userName: string) {

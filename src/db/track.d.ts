@@ -12,10 +12,27 @@ declare type TrackTriageAction = {
 
 declare type TrackTriageActionType = TrackTriageAction['action_type']
 
+/**
+ * Denormalized view of where a track currently sits, so triage questions are a
+ * field read instead of a walk over `triage_actions`.
+ *
+ * - 'inbox'    — in the Inbox playlist, awaiting triage
+ * - 'promoted' — made it to Current. Stays 'promoted' after archiving; filing a
+ *                track away is not a lifecycle change
+ * - 'removed'  — demoted, or found missing from every tracked playlist
+ *
+ * Never written as null. Reads may still see null/undefined on rows that
+ * predate the field or carry an unrecognized action, and consumers must treat
+ * that as "unknown" rather than defaulting to a state.
+ */
+declare type TrackStatus = 'inbox' | 'promoted' | 'removed'
+
 declare interface TrackItem {
   id: string
   play_count: number
   first_seen: TrackSeenContext
   last_seen: TrackSeenContext
   triage_actions?: TrackTriageAction[]
+  status?: TrackStatus | null
+  status_changed_at?: number
 }

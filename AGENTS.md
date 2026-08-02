@@ -134,6 +134,18 @@ The codebase follows a two-layer architecture:
 
 ## Changelog
 
+### 2026-08-02 - Track Status Field + Manual-Change Detection
+
+- Added `status: 'inbox' | 'promoted' | 'removed'` and `status_changed_at` to `TrackItem`, denormalizing the triage lifecycle out of the `triage_actions` log
+- Archiving does **not** change status — a track filed into `2026 - July` stays `'promoted'`
+- `null`/missing means **unknown** and must never be defaulted to a state; no backfill was run
+- Maintained by `STATUS_BY_TRIAGE_ACTION` in both write paths within the same `UpdateCommand` as the log append, so it cannot drift and costs no extra write. `'upvote'` is status-neutral by necessity — `promoteTrack()` pushes it last on every promote and it would otherwise clobber `'promoted'`
+- `ArchiveAction` now also detects manual changes: any row claiming `'inbox'`/`'promoted'` present in neither playlist is marked `'removed'`, after excluding tracks found in archive playlists (`isArchivePlaylistName` in `settings.ts`, tested) — **superseded 2026-08-02**, see above: `'promoted'` reconciles on liked status and the archive exclusion is gone
+- The sweep sets `status` only and never appends a triage action, so an explicit demote (has a `'remove'` entry) stays distinguishable from a silent disappearance
+- Costs: the reconciliation scan is a full table scan (still true, still deferred). Now `Dynamo.tracksWithLiveStatus()` — filtered and projected, but still a scan. The archive-exclusion walk is gone as of 2026-08-02
+- **Known gap:** manual Inbox → Current *is* caught (the Current backfill filters on `'promote'`, which a hand-dragged track lacks), but manual Current → Inbox is **not** (the Inbox backfill filters on `'inboxed'`, which a returning track already has) — status stays `'promoted'` while the track sits in Inbox. Both are `ProcessManualTriage.backfillStage()`. Deliberately deferred; see the changelog
+- See `changelog/2026-08-02_track-status-field.md`
+
 ### 2026-07-25 - Remove Web Frontend
 
 - Excised the React web frontend entirely: deleted `web/`, `src/web-api.ts` (all `/api/*` endpoints), `src/local-server.ts`, and `dev.sh`
