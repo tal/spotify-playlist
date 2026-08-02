@@ -19,11 +19,37 @@ import { AWS } from '../aws'
 import { retryWithBackoff } from '../utils/retry'
 import { delay } from '../utils/delay'
 
+/** Exponential from BASE, so five retries span roughly 50ms → 800ms. */
+const BATCH_GET_MAX_RETRIES = 5
+const BATCH_GET_RETRY_BASE_MS = 50
+
+/**
+ * DynamoDB caps BatchWrite at 25 items. The same number bounds how many
+ * mutations an action puts in one set, since a set is fired as a single
+ * `Promise.all` and a wider fan-out throttles itself.
+ */
+export const DYNAMO_WRITE_CHUNK = 25
+
+/** Shared by every retried Dynamo call below. */
+function isDynamoThroughputError(error: any): boolean {
+  const errorName = error.name || error.__type || ''
+  return (
+    errorName.includes('ProvisionedThroughputExceededException') ||
+    errorName.includes('ThrottlingException') ||
+    (error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons)
+  )
+}
+
 export class Dynamo {
   constructor(public readonly user: UserData) {}
 
   gId(suffix: string) {
     return `${this.user.id}:${suffix}`
+  }
+
+  /** Inverse of `gId`: the bare Spotify id back out of a stored key. */
+  ungId(id: string) {
+    return id.match(/:(.+)/)?.[1] ?? id
   }
 
   async getActionHistory(id: string, since: number) {
@@ -250,31 +276,56 @@ export class Dynamo {
 
     const chunked = chunk(ids, 100)
     for (let ids of chunked) {
-      const Keys = ids.map((id) => ({ id: this.gId(id) }))
-      const params: BatchGetCommandInput = {
-        RequestItems: {
-          track: {
-            Keys,
+      let Keys: { id: string }[] = ids.map((id) => ({ id: this.gId(id) }))
+      let attempt = 0
+
+      // Under throttling BatchGet succeeds while handing back the keys it did
+      // not read, and an unread key is indistinguishable from a missing row.
+      // That distinction matters: ProcessManualTriage reads "no row" as "never
+      // triaged" and writes a triage action, so dropping unread keys turns a
+      // throttle into spurious 'promote' entries — and the write storm that
+      // caused the throttle makes it likely. Retry until they come back.
+      while (Keys.length) {
+        const params: BatchGetCommandInput = {
+          RequestItems: {
+            track: {
+              Keys,
+            },
           },
-        },
-      }
-      const response = await AWS.docs.send(new BatchGetCommand(params))
-
-      if (response.Responses) {
-        const tracks = response.Responses.track as TrackItem[]
-
-        for (let track of tracks) {
-          const m = track.id.match(/:(.+)/)
-          trackMap[m![1]] = track
         }
+        const response = await AWS.docs.send(new BatchGetCommand(params))
+
+        if (response.Responses) {
+          const tracks = response.Responses.track as TrackItem[]
+
+          for (let track of tracks) {
+            trackMap[this.ungId(track.id)] = track
+          }
+        }
+
+        Keys = (response.UnprocessedKeys?.track?.Keys ?? []) as {
+          id: string
+        }[]
+
+        if (!Keys.length) break
+
+        attempt += 1
+
+        if (attempt > BATCH_GET_MAX_RETRIES) {
+          throw `getTracks left ${Keys.length} keys unread after ${BATCH_GET_MAX_RETRIES} retries — refusing to report them as missing`
+        }
+
+        console.log(
+          `[Dynamo] getTracks retrying ${Keys.length} unprocessed keys (attempt ${attempt})`,
+        )
+
+        await delay(BATCH_GET_RETRY_BASE_MS * 2 ** (attempt - 1))
       }
     }
 
-    if (Object.keys(trackMap).length > 0) {
-      return trackMap
-    } else {
-      throw 'no data returned from update for some reason'
-    }
+    // Tracks with no row yet are simply absent from the map — callers already
+    // handle `undefined` lookups, so an all-miss batch is not an error.
+    return trackMap
   }
 
   async getSeenTracks(ids: string[]) {
@@ -455,18 +506,7 @@ export class Dynamo {
   }
   
   async batchPutLikedSongs(songs: LikedSongItem[]) {
-    // DynamoDB BatchWrite has a limit of 25 items per request
-    const batches = chunk(songs, 25)
-
-    // Helper to check if error is a DynamoDB throughput error
-    const isDynamoThroughputError = (error: any): boolean => {
-      const errorName = error.name || error.__type || ''
-      return (
-        errorName.includes('ProvisionedThroughputExceededException') ||
-        errorName.includes('ThrottlingException') ||
-        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
-      )
-    }
+    const batches = chunk(songs, DYNAMO_WRITE_CHUNK)
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i]
@@ -516,16 +556,6 @@ export class Dynamo {
       },
       ScanIndexForward: false, // Sort descending (newest first)
       Limit: limit,
-    }
-
-    // Helper to check if error is a DynamoDB throughput error
-    const isDynamoThroughputError = (error: any): boolean => {
-      const errorName = error.name || error.__type || ''
-      return (
-        errorName.includes('ProvisionedThroughputExceededException') ||
-        errorName.includes('ThrottlingException') ||
-        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
-      )
     }
 
     const items: LikedSongItem[] = []
@@ -595,17 +625,7 @@ export class Dynamo {
     const songs = await this.getLikedSongs(userId)
 
     // Delete in batches of 25
-    const batches = chunk(songs, 25)
-
-    // Helper to check if error is a DynamoDB throughput error
-    const isDynamoThroughputError = (error: any): boolean => {
-      const errorName = error.name || error.__type || ''
-      return (
-        errorName.includes('ProvisionedThroughputExceededException') ||
-        errorName.includes('ThrottlingException') ||
-        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
-      )
-    }
+    const batches = chunk(songs, DYNAMO_WRITE_CHUNK)
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i]
@@ -658,24 +678,13 @@ export class Dynamo {
       return 0
     }
 
-    // Helper to check if error is a DynamoDB throughput error
-    const isDynamoThroughputError = (error: any): boolean => {
-      const errorName = error.name || error.__type || ''
-      return (
-        errorName.includes('ProvisionedThroughputExceededException') ||
-        errorName.includes('ThrottlingException') ||
-        error.$metadata?.httpStatusCode === 400 && error.ThrottlingReasons
-      )
-    }
-
     // Create key objects for deletion
     const keysToDelete = trackIds.map(trackId => ({
       userId,
       trackId,
     }))
 
-    // DynamoDB BatchWrite has a limit of 25 items per request
-    const batches = chunk(keysToDelete, 25)
+    const batches = chunk(keysToDelete, DYNAMO_WRITE_CHUNK)
     let totalDeleted = 0
 
     for (let i = 0; i < batches.length; i++) {
