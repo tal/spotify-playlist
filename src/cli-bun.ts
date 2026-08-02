@@ -150,6 +150,12 @@ const options = {
       action: 'playback',
     },
   },
+  'listen-stats': {
+    pathParameters: {
+      action: 'listen-stats',
+    },
+    queryStringParameters: {},
+  },
   'auto-inbox': {
     pathParameters: {
       action: 'auto-inbox',
@@ -312,8 +318,10 @@ Add query parameters as needed, e.g.:
       
       const body = JSON.parse(result.body)
       const results = body.result
-      
-      console.log(JSON.stringify(result))
+
+      // Pretty-printed so read-only reports (listen-stats, user) are legible
+      // instead of one escaped line.
+      console.log(JSON.stringify(body, null, 2))
       
       // Uncomment to enable notifications
       // notifier.notify({

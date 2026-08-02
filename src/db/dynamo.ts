@@ -261,7 +261,7 @@ export class Dynamo {
 
   async updateTrack(
     { id: trackId }: { id: string },
-    { seen, increment_by, triageActions }: UpdateTrackParams,
+    { seen, increment_by, stage, triageActions }: UpdateTrackParams,
   ) {
     const id = this.gId(trackId)
 
@@ -278,6 +278,13 @@ export class Dynamo {
       )
       ExpressionAttributeValues[':zero'] = 0
       ExpressionAttributeValues[':incr'] = increment_by
+
+      // Rides along in the same UpdateCommand as the global counter, so a
+      // stage-attributed listen still costs exactly one write.
+      if (stage) {
+        const attr = playCountAttributeFor(stage)
+        expressionParts.push(`${attr} = if_not_exists(${attr}, :zero) + :incr`)
+      }
     }
 
     if (seen) {
@@ -899,7 +906,14 @@ export class Dynamo {
 export type UpdateTrackParams = {
   seen?: TrackSeenContext
   increment_by?: number
+  stage?: TriageStage
   triageActions?: TrackTriageAction[]
+}
+
+export function playCountAttributeFor(
+  stage: TriageStage,
+): StagePlayCountAttribute {
+  return `play_count_${stage}`
 }
 
 const STATUS_BY_TRIAGE_ACTION: Record<

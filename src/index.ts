@@ -14,6 +14,7 @@ import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { RulePlaylistAction } from './actions/rule-playlist'
 import { UndoAction } from './actions/undo-action'
+import { settings } from './settings'
 
 function notEmpty<TValue>(
   value: TValue | null | undefined | void,
@@ -96,8 +97,10 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       break
     case 'frequent-crawling':
       actions = [
-        new ArchiveAction(spotify),
+        // Playback history runs first so anything downstream that reads listen
+        // counts sees this run's plays rather than the previous run's.
         new ProcessPlaybackHistoryAction(spotify, dynamo.user),
+        new ArchiveAction(spotify),
         new ProcessManualTriage(spotify),
         new ScanPlaylistsForInbox(spotify),
         new RulePlaylistAction(spotify, { rule: 'smart' }),
@@ -221,6 +224,53 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
           cacheAge: metadata ? `${Math.floor((Date.now() - metadata.lastSyncedAt) / 1000 / 60)} minutes` : 'N/A',
         }),
       }
+    case 'listen-stats': {
+      // Read-only view of the listen counters, for picking an archive
+      // threshold once enough plays have accrued.
+      const { current, timeToArchive } = await settings()
+      const currentPlaylist = await spotify.playlist(current)
+      const playlistTracks = await spotify.tracksForPlaylist(currentPlaylist)
+      const records = await dynamo.getTracks(
+        playlistTracks.map((t) => t.track.id),
+      )
+      const now = new Date().getTime()
+
+      const tracks = playlistTracks
+        .map((t) => {
+          const record = records[t.track.id]
+
+          return {
+            name: t.track.name,
+            artist: t.track.artists.map((a) => a.name).join(', '),
+            daysInCurrent: Math.floor(
+              (now - new Date(t.added_at).getTime()) / days,
+            ),
+            // null is "unknown" — predates the field or never triaged
+            status: record?.status ?? null,
+            plays: record?.play_count ?? 0,
+            playsFromInbox: record?.play_count_inbox ?? 0,
+            playsFromCurrent: record?.play_count_current ?? 0,
+          }
+        })
+        .sort((a, b) => a.playsFromCurrent - b.playsFromCurrent)
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify(
+          {
+            playlist: currentPlaylist.name,
+            trackCount: tracks.length,
+            archivesAfterDays: Math.floor(timeToArchive / days),
+            neverPlayedFromCurrent: tracks.filter(
+              (t) => t.playsFromCurrent === 0,
+            ).length,
+            tracks,
+          },
+          null,
+          2,
+        ),
+      }
+    }
     case 'clear-liked-cache':
       // Clear the cache for current user
       await spotify.clearLikedSongsCache()

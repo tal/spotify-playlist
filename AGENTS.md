@@ -42,7 +42,8 @@ java -Djava.library.path=./dynamodb_local_latest/DynamoDBLocal_lib -jar dynamodb
 
 # Run specific actions locally via CLI
 # Available actions: promote, demote, archive, playback, auto-inbox, undo, undo-last,
-#                    rule-playlist, sync-liked-songs, liked-songs-stats, clear-liked-cache
+#                    rule-playlist, sync-liked-songs, liked-songs-stats, clear-liked-cache,
+#                    listen-stats
 bun run cli <action-name>
 bun run cli:bun <action-name>
 
@@ -145,6 +146,16 @@ The codebase follows a two-layer architecture:
 - Costs: the reconciliation scan is a full table scan (still true, still deferred). Now `Dynamo.tracksWithLiveStatus()` — filtered and projected, but still a scan. The archive-exclusion walk is gone as of 2026-08-02
 - **Known gap:** manual Inbox → Current *is* caught (the Current backfill filters on `'promote'`, which a hand-dragged track lacks), but manual Current → Inbox is **not** (the Inbox backfill filters on `'inboxed'`, which a returning track already has) — status stays `'promoted'` while the track sits in Inbox. Both are `ProcessManualTriage.backfillStage()`. Deliberately deferred; see the changelog
 - See `changelog/2026-08-02_track-status-field.md`
+
+### 2026-08-01 - Per-Stage Listen Counts
+
+- Added `play_count_inbox` / `play_count_current` to the `track` table alongside the existing global `play_count`, keyed off a new `TriageStage = 'inbox' | 'current'` union
+- `ProcessPlaybackHistoryAction` attributes each played item by matching Spotify's playback `context.uri` against the Inbox/Current playlists; plays with no playlist context still bump `play_count` only
+- Counters are cumulative and never reset on promote/demote; both cost one write via a second clause on the same `UpdateCommand`
+- New `listen-stats` action/CLI command reports play counts and days-in-Current per track
+- **Archiving still gates on `timeToArchive` only** — this change just starts collecting the data
+- Fixed along the way: the `context`→`seen` key mismatch that meant playback never wrote `first_seen`/`last_seen`, two un-awaited Dynamo writes, `getTracks()` throwing on an all-miss batch, `performCurrent()` discarding its mutations, and the `frequent-crawling` action ordering
+- See `changelog/2026-08-01_per-stage-listen-counts.md`
 
 ### 2026-07-25 - Remove Web Frontend
 

@@ -27,9 +27,20 @@ declare type TrackTriageActionType = TrackTriageAction['action_type']
  */
 declare type TrackStatus = 'inbox' | 'promoted' | 'removed'
 
+/**
+ * The triage playlists a listen can be attributed to. A play only counts
+ * toward a stage when Spotify reports that playlist as the playback context,
+ * so these are "listens started from" counts, not "listens while it lived here".
+ */
+declare type TriageStage = 'inbox' | 'current'
+
+declare type StagePlayCountAttribute = `play_count_${TriageStage}`
+
 declare interface TrackItem {
   id: string
   play_count: number
+  play_count_inbox?: number
+  play_count_current?: number
   first_seen: TrackSeenContext
   last_seen: TrackSeenContext
   triage_actions?: TrackTriageAction[]
