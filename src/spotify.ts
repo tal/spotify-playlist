@@ -4,6 +4,7 @@ import SpotifyWebApi, {
   User,
   RecentlyPlayedItem,
 } from 'spotify-web-api-node'
+import { chunkArray } from './utils/array'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
   if ('id' in obj) {
@@ -19,17 +20,6 @@ function hasURI(obj: { id: string } | { uri: string }): obj is { uri: string } {
   } else {
     return false
   }
-}
-
-function groupArrayBy<T>(array: T[], count: number): T[][] {
-  let grouped: T[][] = []
-
-  for (let i = 0, j = array.length; i < j; i += count) {
-    let temparray = array.slice(i, i + count)
-    grouped.push(temparray)
-  }
-
-  return grouped
 }
 
 function asyncMemoize(
@@ -611,7 +601,7 @@ export class Spotify {
     }
 
     const uris = tracksToAdd.map((tr) => tr.uri)
-    const uriSets = groupArrayBy(uris, 100)
+    const uriSets = chunkArray(uris, 100)
 
     const client = this.client
 

@@ -1,4 +1,3 @@
-import { add } from 'lodash'
 import { Dynamo } from '../db/dynamo'
 import { Mutation } from '../mutations/mutation'
 import { Spotify } from '../spotify'

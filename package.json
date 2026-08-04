@@ -1,43 +1,28 @@
 {
   "name": "spotify-thing",
   "version": "1.0.0",
-  "main": "index.js",
   "license": "MIT",
   "private": true,
-  "engines": {},
   "scripts": {
-    "cli": "./dist/cli.js",
-    "cli:bun": "bun run src/cli-bun.ts",
-    "cli:bun:server": "bun run src/cli-bun.ts --server",
-    "cli:bun:reauth": "bun run src/reauth.ts",
-    "build": "npx tsc",
+    "cli": "bun run src/cli-bun.ts",
+    "cli:server": "bun run src/cli-bun.ts --server",
+    "reauth": "bun run src/reauth.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "format": "bunx prettier --write .",
+    "format:check": "bunx prettier --check .",
     "test": "bun test",
     "test:watch": "bun test --watch"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.145",
-    "@types/bluebird": "^3.5.42",
-    "@types/bun": "^1.2.20",
-    "@types/detect-port": "^2.0.0",
-    "@types/jsonfile": "^6.1.4",
-    "@types/lodash": "^4.17.13",
-    "@types/node": "^22.10.6",
-    "@types/node-notifier": "^8.0.5",
-    "lambda-local": "^2.2.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.8.3"
+    "@types/aws-lambda": "^8.10.162",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.20.1",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.695.0",
-    "@aws-sdk/client-xray": "^3.695.0",
-    "@aws-sdk/lib-dynamodb": "^3.695.0",
-    "aws-xray-sdk": "^3.10.3",
-    "aws-xray-sdk-core": "^3.10.3",
-    "detect-port": "^2.1.0",
-    "dotenv": "^16.5.0",
-    "jsonfile": "^6.1.0",
-    "lodash": "^4.17.21",
-    "node-notifier": "^10.0.1",
+    "@aws-sdk/client-dynamodb": "^3.1102.0",
+    "@aws-sdk/lib-dynamodb": "^3.1102.0",
     "spotify-web-api-node": "^5.0.2"
   }
 }

@@ -1,4 +1,4 @@
-import { chunk } from 'lodash'
+import { chunkArray } from '../utils/array'
 import {
   QueryCommand,
   UpdateCommand,
@@ -346,7 +346,7 @@ export class Dynamo {
   async getTracks(ids: string[]) {
     const trackMap: Record<string, TrackItem | undefined> = {}
 
-    const chunked = chunk(ids, 100)
+    const chunked = chunkArray(ids, 100)
     for (let ids of chunked) {
       let Keys: { id: string }[] = ids.map((id) => ({ id: this.gId(id) }))
       let attempt = 0
@@ -672,7 +672,7 @@ export class Dynamo {
   }
   
   async batchPutLikedSongs(songs: LikedSongItem[]) {
-    const batches = chunk(songs, DYNAMO_WRITE_CHUNK)
+    const batches = chunkArray(songs, DYNAMO_WRITE_CHUNK)
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i]
@@ -791,7 +791,7 @@ export class Dynamo {
     const songs = await this.getLikedSongs(userId)
 
     // Delete in batches of 25
-    const batches = chunk(songs, DYNAMO_WRITE_CHUNK)
+    const batches = chunkArray(songs, DYNAMO_WRITE_CHUNK)
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i]
@@ -850,7 +850,7 @@ export class Dynamo {
       trackId,
     }))
 
-    const batches = chunk(keysToDelete, DYNAMO_WRITE_CHUNK)
+    const batches = chunkArray(keysToDelete, DYNAMO_WRITE_CHUNK)
     let totalDeleted = 0
 
     for (let i = 0; i < batches.length; i++) {

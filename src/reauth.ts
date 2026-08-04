@@ -17,7 +17,7 @@
  * Run it:
  *   bun run src/reauth.ts
  *   # or, via package.json:
- *   yarn cli:bun:reauth
+ *   bun run reauth
  *
  * Environment (SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET load from .env):
  *   SPOTIFY_CLIENT_ID       required
@@ -41,7 +41,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb'
 
-// Scopes must be a superset of what the Lambda needs — mirror src/spotify-api.ts.
+// Scopes must be a superset of the endpoints used by src/spotify.ts.
 const SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',

@@ -1,10 +1,10 @@
-import { chunk } from 'lodash'
 import { Dynamo, DYNAMO_WRITE_CHUNK } from '../db/dynamo'
 import { AddTrackListenMutation } from '../mutations/add-track-listen-mutation'
 import { Mutation } from '../mutations/mutation'
 import { Spotify } from '../spotify'
 import { Action } from './action'
 import { getTriageInfo } from './actionable-type'
+import { chunkArray } from '../utils/array'
 
 export class ProcessManualTriage implements Action {
   readonly idThrottleMs: number | undefined = undefined
@@ -61,7 +61,7 @@ export class ProcessManualTriage implements Action {
       })
     })
 
-    return chunk(mutations, DYNAMO_WRITE_CHUNK)
+    return chunkArray(mutations, DYNAMO_WRITE_CHUNK)
   }
 
   async perform({ dynamo }: { dynamo: Dynamo }): Promise<Mutation<any>[][]> {

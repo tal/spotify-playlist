@@ -1,12 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 
-// Import X-Ray SDK if we're in Lambda environment
-let AWSXRay: any
-if (process.env._X_AMZN_TRACE_ID) {
-  AWSXRay = require('aws-xray-sdk-core')
-}
-
 class AWSInstanceManager {
   public dynamo: DynamoDBClient
   public docs: DynamoDBDocumentClient
@@ -34,12 +28,7 @@ class AWSInstanceManager {
     }
     // For Lambda (no endpoint), omit credentials entirely to use execution role
 
-    let dynamoClient = new DynamoDBClient(config)
-
-    // If X-Ray is enabled, capture the client
-    if (AWSXRay && process.env._X_AMZN_TRACE_ID) {
-      dynamoClient = AWSXRay.captureAWSv3Client(dynamoClient)
-    }
+    const dynamoClient = new DynamoDBClient(config)
 
     this.dynamo = dynamoClient
 

@@ -38,6 +38,14 @@ describe('buildArchiveMatcher', () => {
     expect(isTestArchive('T 2026 - July')).toBe(false)
   })
 
+  it('treats every regular-expression metacharacter in a prefix literally', () => {
+    const prefix = String.raw`.[Monthly](+)?^$|{archive}\\`
+    const isPrefixedArchive = buildArchiveMatcher(prefix)
+
+    expect(isPrefixedArchive(`${prefix} 2026 - July`)).toBe(true)
+    expect(isPrefixedArchive('anything 2026 - July')).toBe(false)
+  })
+
   it('keeps the two prefixes from matching each other', () => {
     expect(isArchive('[Test] 2026 - July')).toBe(false)
     expect(isTestArchive('2026 - July')).toBe(false)

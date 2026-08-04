@@ -1,4 +1,3 @@
-import { chunk } from 'lodash'
 import { Action } from './action'
 import { Spotify, TrackForMove } from '../spotify'
 import { MoveTrackMutation } from '../mutations/move-track-mutation'
@@ -6,6 +5,7 @@ import { SetTrackStatusMutation } from '../mutations/set-track-status-mutation'
 import { settings } from '../settings'
 import { Mutation } from '../mutations/mutation'
 import { Dynamo, DYNAMO_WRITE_CHUNK, TrackStatusRow } from '../db/dynamo'
+import { chunkArray } from '../utils/array'
 
 /**
  * Spotify hands back `{ track: null }` for items it can no longer resolve
@@ -234,6 +234,9 @@ export class ArchiveAction implements Action {
     // Promise.all, so it goes out in chunks rather than as a single fan-out that
     // throttles itself. Archive moves stay in one set — they are few and each
     // one is already a batched playlist call.
-    return [archiveMutations, ...chunk(statusMutations, DYNAMO_WRITE_CHUNK)]
+    return [
+      archiveMutations,
+      ...chunkArray(statusMutations, DYNAMO_WRITE_CHUNK),
+    ]
   }
 }

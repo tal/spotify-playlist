@@ -1,4 +1,4 @@
-import { escapeRegExp } from 'lodash'
+import { escapeRegExp } from './utils/regex'
 
 const MONTH_NAMES = [
   'January',

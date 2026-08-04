@@ -1,6 +1,6 @@
 require('./-run-this-first')
 import { Spotify } from './spotify'
-import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
+import type { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
 import { MagicPromoteAction } from './actions/magic-promote-action'
 import { performActions, Action } from './actions/action'
 import { AfterTrackActionAction } from './actions/track-action'

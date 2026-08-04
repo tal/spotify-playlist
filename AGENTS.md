@@ -8,23 +8,26 @@ This is a Spotify playlist management automation system that runs as an AWS Lamb
 
 ## Common Development Commands
 
-### Build & Compile
+### Typecheck
+
+The deployed Lambda runs on Bun and executes `src/*.ts` directly, so `tsc` is
+**not** part of deployment. It is still the typechecker.
 
 ```bash
-# Compile TypeScript to JavaScript
-bunx tsc
+# Typecheck (no emit)
+bun run typecheck
 
-# Build for production (compiles TypeScript)
-bun run build
-
-# Run the CLI locally (Node.js - requires compilation first)
+# Run the Bun CLI locally
 bun run cli <action-name>
 
-# Run the CLI with Bun (no compilation needed)
-bun run cli:bun <action-name>
-
 # Start local API server with Bun
-bun run cli:bun:server
+bun run cli:server
+
+# Re-authorize Spotify and store the new token in DynamoDB
+bun run reauth
+
+# Serve the real Lambda handler locally over HTTP (no Lambda, no compile)
+bun run src/lambda-bun.ts
 ```
 
 ### Deployment
@@ -33,6 +36,21 @@ bun run cli:bun:server
 # Deploy to AWS Lambda
 ruby scripts/publish.rb
 ```
+
+The function runs on the **Bun custom-runtime layer**, not a managed Node
+runtime: `provided.al2023` / `arm64` / handler `src/lambda-bun.fetch` / layer
+`arn:aws:lambda:us-east-1:495671805917:layer:bun:2` (Bun v1.3.14). `publish.rb`
+asserts all of that on every deploy, stages the package in `build/lambda`, and
+installs production dependencies only.
+
+Two things to know before changing anything here:
+
+- **Memory cannot go back to 128MB.** Bun's baseline is much heavier than
+  Node's — the read-only `user` action peaks at 115MB, and a full
+  `frequent-crawling` run peaks at 289MB. The function is set to 512MB.
+- **X-Ray subsegments are off under Bun** and this is deliberate, not broken.
+  The X-Ray SDK packages are not installed; Lambda service-level tracing remains
+  controlled by `TracingConfig`.
 
 ### Local Development
 
@@ -45,13 +63,12 @@ java -Djava.library.path=./dynamodb_local_latest/DynamoDBLocal_lib -jar dynamodb
 #                    rule-playlist, sync-liked-songs, liked-songs-stats, clear-liked-cache,
 #                    listen-stats
 bun run cli <action-name>
-bun run cli:bun <action-name>
 
 # Examples:
-bun run cli promote          # Promote current track
-bun run cli:bun demote       # Demote current track (with Bun)
-bun run cli archive          # Archive old tracks
-bun run cli undo-last        # Undo last promote/demote action
+bun run cli promote    # Promote current track
+bun run cli demote     # Demote current track
+bun run cli archive    # Archive old tracks
+bun run cli undo-last  # Undo last promote/demote action
 ```
 
 ## Architecture
@@ -77,7 +94,21 @@ The codebase follows a two-layer architecture:
 
 ### Core Components
 
-**Spotify Integration** (`src/spotify.ts`, `src/spotify-api.ts`):
+**Runtime Adapter** (`src/lambda-bun.ts`):
+
+- The Bun layer never passes a Lambda event to the handler — it turns every
+  invocation into a `Request` and expects a `Response` back. This file
+  translates both ways so `src/index.ts` keeps its `APIGatewayProxyHandler`
+  shape
+- **The request body is not the event.** For non-HTTP events (the EventBridge
+  `frequent-crawling` trigger) the body is a `{requestId, traceId, functionArn,
+  deadlineMs, event}` wrapper; the real event hangs off the request as `.aws`
+- Responses default to `Content-Type: application/json` because the layer
+  base64-encodes anything that is not `text/*` or `application/json`
+- Because the export is a Bun server object, `bun run src/lambda-bun.ts` serves
+  the handler locally with no Lambda involved
+
+**Spotify Integration** (`src/spotify.ts`):
 
 - Wraps the Spotify Web API with caching and automatic token refresh
 - Uses `@asyncMemoize` decorator to cache API responses and reduce API calls
@@ -125,9 +156,9 @@ The codebase follows a two-layer architecture:
 
 ## Development Tips
 
-- The `-run-this-first.ts` file initializes global variables (like `dev`, `minutes`, `hours`) and sets up AWS X-Ray tracing
+- The `-run-this-first.ts` file initializes global variables (like `dev`, `minutes`, `hours`)
 - Run migrations in `src/migrations/` to set up DynamoDB tables for local development
-- The system uses AWS X-Ray for distributed tracing in production (automatically disabled in development)
+- Lambda service-level X-Ray tracing remains active, but the Bun runtime does not create HTTP or DynamoDB subsegments
 - Settings are managed per-user in DynamoDB, not in config files
 - To reset memoized caches, use `(method as any).reset()` on decorated methods
 - The Lambda handler in `src/index.ts` routes requests to action handlers based on the path, path parameters, or `action` query parameter
@@ -177,6 +208,19 @@ The durable fix is to move "which sets still run after an earlier failure" into
 load-bearing at all.
 
 ## Changelog
+
+### 2026-08-04 - Bun on Lambda
+
+- The function moved off the managed Node runtime onto a **Bun custom-runtime layer**: `nodejs20.x` / `x86_64` / `dist/index.handler` → `provided.al2023` / `arm64` / `src/lambda-bun.fetch`, layer `arn:aws:lambda:us-east-1:495671805917:layer:bun:2` (Bun v1.3.14, built from `oven-sh/bun` `packages/bun-lambda` — the standalone `oven-sh/bun-lambda` repo no longer exists)
+- **No `tsc` in the deploy path.** Bun runs `src/*.ts` directly; the duplicate compiled Node CLI and `dist/` path are gone. `bun run typecheck` remains the typechecker
+- New `src/lambda-bun.ts` adapts the layer's `Request`/`Response` contract onto the existing `APIGatewayProxyHandler`. **No action or mutation code changed.** Its two non-obvious contracts (the event lives on `.aws`, not in the body; Content-Type decides base64) are documented in Core Components above
+- **Memory 128MB → 512MB, forced.** The read-only `user` action peaks at 115MB on Bun; a full `frequent-crawling` run peaks at 289MB. This is not tunable back down
+- **X-Ray subsegments are deliberately off under Bun** — `_X_AMZN_TRACE_ID` is set by the layer per invocation, after module initialization, so the old module-scope capture could never run. The unused X-Ray SDK packages and branches are gone. Service-level traces still record; `TracingConfig` is still `Active` and could be dropped to `PassThrough`
+- Direct dependencies were reduced from 22 to 8: the Bun CLI replaced the duplicate Node/`lambda-local` path, dead pre-Lambda Spotify modules were removed, and small native helpers replaced Lodash
+- `scripts/publish.rb` rewritten: stages into `build/lambda`, production-only install, prunes tests/scripts/migrations, and asserts runtime + handler + arch + layer + memory on every deploy instead of trusting console state
+- Verified live on all three invoke paths (EventBridge with the exact `Archive-Trigger` payload — 5/5 actions `success`; Function URL over HTTPS; API Gateway proxy v1). The dependency cleanup passes 58 tests
+- Pre-change code zip + config were snapshotted; rollback commands are in the changelog entry
+- See `changelog/2026-08-04_bun-on-lambda.md`
 
 ### 2026-08-02 - Adversarial-Review Fixes (High Priority)
 

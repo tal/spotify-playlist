@@ -18,8 +18,3 @@ g.seconds = 1000
 g.minutes = 1000 * 60
 g.hours = 1000 * 60 * 60
 g.days = 1000 * 60 * 60 * 24
-
-if (process.env._X_AMZN_TRACE_ID) {
-  const AWSXRay = require('aws-xray-sdk')
-  AWSXRay.captureHTTPsGlobal(require('http'))
-}
