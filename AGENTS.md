@@ -4,7 +4,7 @@ This file provides guidance to coding agents working in this repository.
 
 ## Overview
 
-This is a Spotify playlist management automation system that runs as an AWS Lambda function. It automates playlist operations including managing inbox/current playlists, archiving tracks by month, processing playback history, and promoting/demoting tracks based on listening patterns.
+This is a Spotify playlist management automation system that runs as an AWS Lambda function. It manages Inbox/Current playlists, archives tracks by month, processes playback history, and supports explicit promote/demote decisions. Per-stage listening data is being collected for future automatic transitions, but does not drive them yet.
 
 ## Common Development Commands
 
@@ -127,20 +127,151 @@ The codebase follows a two-layer architecture:
   - `liked_songs` and `liked_songs_metadata` - Cached Spotify liked songs
 - Supports local DynamoDB for development (when NODE_ENV=development)
 
-**Track Triage Workflow**:
+### Track Triage Workflow
 
-- Tracks progress through three states: Unheard → Liked → Confirmed
-- Archives are created monthly from confirmed tracks
-- Smart playlist features use starred tracks and artist preferences
+This section describes the intended product workflow. Keep the distinction
+between **current implementation** and **desired behavior** explicit when
+changing it; do not silently turn a future rule into a claim about production.
+
+#### Concepts that must not be conflated
+
+- The user-facing progression is `Unheard → Liked → Current → Archived`,
+  with `Removed` as an exit from triage.
+- Spotify playlist/library state is the source of operational truth:
+  - **Unheard** — in Inbox, not in Current, not saved.
+  - **Liked** — in Inbox, not in Current, saved.
+  - **Current** (also called confirmed/promoted in older code) — not in Inbox,
+    in Current, saved.
+  - **Archived** — moved out of Current into the monthly archive and normally
+    still saved.
+  - **Removed** — no longer in the active triage flow. Whether an automatic
+    Inbox removal should preserve a manually saved/liked track is still TBD.
+- `TrackStatus` is the denormalized DynamoDB lifecycle view:
+  `'inbox' | 'promoted' | 'removed'`. Archived tracks currently remain
+  `'promoted'`; whether Archived eventually gets its own status is TBD.
+- `TriageStage` is only playback attribution: `'inbox' | 'current'`. It answers
+  where a listen started, not the track's lifecycle status.
+- `play_count_inbox` and `play_count_current` are cumulative counters. They are
+  incremented only when Spotify's playback context is the corresponding
+  playlist. A play from Liked Songs, Search, an album, or contextless autoplay
+  increments `play_count` only, even if the track belongs to Inbox or Current.
+
+#### Entry and explicit triage
+
+- `ScanPlaylistsForInbox` checks Discover Weekly and Release Radar. A track with
+  no existing DynamoDB row is added to Inbox and gets an `'inboxed'` triage
+  action / `status: 'inbox'`.
+- Promote is a two-step positive decision:
+  1. Unheard → Liked saves the track and leaves it in Inbox.
+  2. Liked → Current adds it to Current, removes it from Inbox, keeps it
+     saved, and records `'promote'` / `status: 'promoted'`.
+- The existing Demote action is an explicit rejection: it removes the track
+  from Inbox and Current, normally unsaves it, and records `'remove'` /
+  `status: 'removed'`. Starred has special handling; inspect `demoteTrack()`
+  before changing its semantics.
+- Promote and Demote are undoable for a short window through `action_history`.
+  Manual Spotify edits and maintenance reconciliation do not currently have the
+  same undo path.
+
+#### Playback-driven transitions: desired behavior
+
+- A track repeatedly played from **Inbox** without being promoted is an
+  implicit negative decision. After it has been listened to enough in Inbox,
+  the workflow should support Inbox → Removed automatically.
+- A track repeatedly played from **Current** has completed its active rotation.
+  After it has been listened to enough in Current, the workflow should support
+  Current → Archived automatically.
+- "Listened to enough" is deliberately unspecified for now. Do not invent a
+  threshold in code or documentation; use accumulated `listen-stats` data when
+  making that product decision.
+- It is also still TBD whether Inbox → Removed applies only to unliked tracks
+  or can remove a track that was manually saved while still in Inbox.
+- Current production behavior remains time-based: `ArchiveAction` moves a track
+  after 30 days in Current, based on the Current playlist item's `added_at`.
+  `play_count_current` is collected and reported but does not gate archiving yet.
+- Manual-triage backfills use `increment_by: 0`. Playlist placement is evidence
+  of a lifecycle transition, never evidence that a listen happened; no manual
+  move may synthesize, transfer, or reset play counts.
+
+#### Manual equivalence and reconciliation: desired invariant
+
+Every automatic transition must also be available as a deliberate manual
+transition. Whether initiated through an action endpoint or by editing Spotify
+directly, reconciliation should rectify the whole state: playlist membership,
+saved/liked state where the transition defines it, the triage log, and the
+denormalized DynamoDB status. It must not merely notice a playlist membership
+change while leaving contradictory state elsewhere.
+
+In particular, future reconciliation must handle repeated and reverse
+transitions, not ask only whether a track has *ever* had a matching action.
+Re-adding a removed track, moving Current back to Inbox, manually moving Inbox
+to Current, and manually requesting Current → Archived or Inbox → Removed
+must converge on the same result as their automatic equivalents. Exact saved
+state for the still-TBD Inbox removal rule must be settled before implementing
+that transition.
+
+Current `ProcessManualTriage` is narrower than this desired invariant:
+
+- It observes Inbox and Current membership and backfills `'inboxed'` or
+  `'promote'` only when that action type has never appeared for the track.
+- It uses the playlist item's `added_at` as the action time and may establish
+  `first_seen`, but it writes `increment_by: 0` and never counts a listen.
+- It does not move tracks, save/unsave them, skip playback, or archive them.
+- Manual Inbox → Current is usually detected, but Current → Inbox and
+  re-entry after removal can be missed because the historical action already
+  exists. Treat these as implementation gaps, not desired behavior.
+- `ArchiveAction` currently reconciles an `'inbox'` row against Inbox membership
+  and a `'promoted'` row against liked status. Absence from Current alone is not
+  removal because archived and Starred tracks legitimately leave Current.
+- A reconciliation-only disappearance sets `status: 'removed'` without adding
+  a `'remove'` triage action, preserving the distinction from explicit Demote.
+
+#### Recurring production workflow
+
+The confirmed live recurring caller is EventBridge rule `Archive-Trigger`; it
+invokes `frequent-crawling` every six hours. Re-check AWS before changing the
+schedule or target, and keep the action order deliberate:
+
+1. `ProcessPlaybackHistoryAction` records new plays and advances the playback
+   watermark. It runs first so later transition decisions can see this run's
+   counts.
+2. `ArchiveAction` applies the current time-based archive rule and reconciles
+   live statuses.
+3. `ProcessManualTriage` backfills changes made directly in Spotify.
+4. `ScanPlaylistsForInbox` imports unseen Discover Weekly / Release Radar
+   tracks.
+5. `RulePlaylistAction` rebuilds the Smart Playlist from Starred and saved-track
+   data; it does not consume triage status.
+
+The standalone `playback` action runs playback-history processing followed by
+manual-triage backfill. The EventBridge target payload selects
+`action=frequent-crawling`; changing the action name or event adapter without
+updating that target breaks scheduled maintenance.
+
+#### Checklist for workflow changes
+
+Before changing a lifecycle transition, status mapping, or stage listen count,
+trace all of these paths together:
+
+- the explicit Promote, Demote, Undo, and future manual-transition actions;
+- direct Spotify edits observed by `ProcessManualTriage` and `ArchiveAction`;
+- playback attribution and watermark ordering;
+- the six-hour `frequent-crawling` action order;
+- playlist membership, saved/liked state, `triage_actions`, `status`, and action
+  history after both the automatic and manual form of the transition.
+
+A workflow change is incomplete if only the main action works while the manual
+reconciliation path leaves the track in a contradictory state.
 
 ### Key Actions
 
 - `actionForPlaylist()` - Routes playlist-specific actions based on playlist name/type
-- `MagicPromoteAction` - Promotes current track to next stage (inbox → current → confirmed)
-- `DemoteAction` - Demotes current track to previous stage
+- `MagicPromoteAction` - Advances the current track from Unheard → Liked or Liked → Current
+- `DemoteAction` - Explicitly rejects the current track, removing it from active triage rather than stepping back one stage
 - `ProcessPlaybackHistoryAction` - Processes Spotify listening history and updates track metadata
+- `ProcessManualTriage` - Backfills lifecycle metadata for direct Spotify playlist edits; it records no listens and does not perform the full transition
 - `AddPlaylistToInbox` - Adds new tracks from source playlists to inbox
-- `ArchiveAction` - Archives confirmed tracks by month (e.g., "Archive 2025-01")
+- `ArchiveAction` - Moves aged Current tracks into playlists such as `2026 - July` and reconciles live statuses
 - `RulePlaylistAction` - Creates smart playlists based on rules (e.g., starred tracks)
 - `UndoAction` - Reverses previous promote/demote actions
 - `SkipToNextTrack` - Skips to next track in current playback
@@ -149,7 +280,7 @@ The codebase follows a two-layer architecture:
 
 1. **Action Throttling**: Actions use `idThrottleMs` to prevent duplicate operations (e.g., 5 minutes for promote/demote)
 2. **Memoization with Decorators**: `@asyncMemoize` decorator caches method results with `.reset()` method to clear cache
-3. **Mutation Sets**: Actions return arrays of mutation arrays, where each inner array is executed sequentially
+3. **Mutation Sets**: Actions return arrays of mutation arrays. Sets execute sequentially; mutations within one set execute concurrently via `Promise.all`
 4. **Error Handling**: Comprehensive error handling with detailed logging; special handling for token expiration (401 errors)
 5. **User Context**: Multi-tenant support with user-specific settings and data; currently hardcoded to 'koalemos' user
 6. **Undo Support**: Actions can implement `undo()` to reverse their operations (tracked in DynamoDB)
