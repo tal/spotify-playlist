@@ -106,11 +106,30 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         new RulePlaylistAction(spotify, { rule: 'smart' }),
       ]
       break
-    case 'user':
+    case 'user': {
+      // This endpoint is reachable unauthenticated over the Function URL, so
+      // the OAuth tokens must never go out in the response. The fields are
+      // listed explicitly rather than spread-and-overridden so a new secret
+      // added to UserSpotifyAuthData fails to compile instead of leaking.
+      // `expiresAt` stays: it is what you actually want when debugging a
+      // refresh, and it is not a credential.
+      const { spotifyAuth, ...rest } = dynamo.user
+      const redacted = `[redacted for ${dynamo.user.id}]`
+
       return {
         statusCode: 200,
-        body: JSON.stringify({ user: dynamo.user }),
+        body: JSON.stringify({
+          user: {
+            ...rest,
+            spotifyAuth: {
+              accessToken: redacted,
+              refreshToken: redacted,
+              expiresAt: spotifyAuth.expiresAt,
+            },
+          },
+        }),
       }
+    }
     case 'archive':
       const archive = new ArchiveAction(spotify)
       actions = archive
