@@ -157,7 +157,6 @@ bun run cli undo-last  # Undo last promote/demote action
 The codebase follows a two-layer architecture:
 
 1. **Actions** (`src/actions/`) - High-level business logic that orchestrates operations. Each action:
-
    - Implements the `Action` interface with `getID()`, `perform()`, and optional `forStorage()` methods
    - Returns an array of mutation arrays (mutation sets) to be executed
    - Supports throttling via `idThrottleMs` to prevent duplicate operations
@@ -379,24 +378,23 @@ reconciliation path leaves the track in a contradictory state.
 Latent traps that are **not** visible from the code they affect. Kept here rather
 than in a dated changelog entry so they don't scroll out of sight.
 
-### `ArchiveAction`'s `idThrottleMs` can never fire
+### Action ids must be stable across invocations
 
-`ArchiveAction` declares `idThrottleMs = 60 * 1000`, but `getID()` returns
-`archive:${this.created_at}` — a fresh timestamp per construction. The throttle
-check in `performAction` (`src/actions/action.ts`) calls
-`dynamo.getActionHistory(await action.getID(), since)`, which is an **exact-match
-`KeyConditionExpression` on that id**. A newly minted id can never match a stored
-one, so the lookup always misses and the action always runs.
+The throttle check in `performAction` (`src/actions/action.ts`) calls
+`dynamo.getActionHistory(await action.getID(), since)`, an **exact-match
+`KeyConditionExpression` on that id**. An id minted from the clock can never
+match a stored one, so the lookup always misses and `idThrottleMs` is decorative.
 
-- Every action id must be **stable across invocations** for throttling to work.
-  `MagicPromoteAction` gets this right (`promote:${currentTrack.uri}`);
-  `ArchiveAction` does not.
-- This matters more than it looks: `ArchiveAction` runs on `frequent-crawling`
-  and opens with `Dynamo.tracksWithLiveStatus()`, a **full table scan**. The
-  declared throttle is the only apparent guardrail on it, and it isn't one.
-- Fix is to key the id on the period being archived, not the clock — but note
-  that a stable id also means `forStorage`'s `ttl` and the `action_history` row
-  start colliding between runs, so it isn't a one-liner.
+- `getID()` must be a pure function of constructor data. `MagicPromoteAction`
+  keys on the track uri, `ArchiveAction` on `archive:<YYYY-MM>`.
+- Recurring rows are not a reason to reach for a fresh id: `action_history` is
+  keyed `(id HASH, created_at RANGE)` (`config/dynamo-tables/action-history.json`),
+  so repeated runs under one id still write their own rows and keep their own
+  `ttl`. Freshness is the throttle window's job, not the id's.
+- Several ids are still clock-derived — `ProcessManualTriage`,
+  `ScanPlaylistsForInbox`, `ProcessPlaybackHistoryAction`, `SkipToNextTrack`,
+  `UndoAction`. None of them declare a throttle, so nothing is broken today, but
+  none of them can grow one without changing the id first.
 
 ### `ListenSequence`'s ordering invariant is enforced by nothing
 
@@ -404,7 +402,7 @@ The watermark is only correct if the playback pass keeps **one listen per
 mutation set, ascending by `played_at`, watermark set last**. That is stated in a
 comment in `ProcessPlaybackHistoryAction` and nowhere else.
 
-`performAction` runs mutation *sets* sequentially but fires everything **within**
+`performAction` runs mutation _sets_ sequentially but fires everything **within**
 a set as one `Promise.all`. So chunking the playback path for throughput — the
 way `ProcessManualTriage` and `ArchiveAction` already do via
 `DYNAMO_WRITE_CHUNK` — would silently let the watermark advance past a failed
@@ -418,6 +416,46 @@ The durable fix is to move "which sets still run after an earlier failure" into
 load-bearing at all.
 
 ## Changelog
+
+### 2026-08-06 - Close Tier 1 Test-Coverage Gaps
+
+- A two-agent coverage audit read the mock-free suite (210 tests / 13 files) against
+  the production code it claims to pin and ranked gaps by how quietly a regression
+  would ship. **Tier 1** = a plausible one-line change the green suite would not
+  catch. This wave closes every Tier 1 gap raised
+- 16 gaps closed, one test each: `undoDirectionFor`'s promote/demote direction;
+  `archivePeriod` and `buildArchiveNamer`'s local-vs-UTC month bucketing;
+  `ArchiveAction.getID()` stability; `forStorage`'s `ttl` (seconds vs. ms, and the
+  empty-mutations branch); `idsIn`'s id-less-entry admission; `performActions`
+  sequential-set ordering; `MarkActionUndoneMutation.mutate`'s Dynamo call;
+  `ProcessManualTriage`'s backfill when `triage_actions` is entirely absent;
+  `isCurrentlyPlayingInTriage`'s Current-membership and type-guard branches;
+  `actionForPlaylist`'s trailing-vs-anywhere `[A]` regex; `getRandomSlice`'s
+  candidate-window math and `rulePlaylistPlan`'s empty-then-fill set boundary;
+  `noRemixes`/`noLive` case-insensitivity; `normalizeActionError`'s 400 ladder and
+  `actionNameFromEvent`'s source precedence; `trackToData`'s projection
+- Two audit findings didn't hold up: `noRemixes`/`noLive`/`onlyOriginals` have zero
+  production callers (pre-existing, not a regression — the new tests pin functions
+  nothing currently calls) and the `undoneMembership` dead-code premise was moot —
+  it doesn't exist anywhere in `src/`
+- Production changes stayed inside the sanctioned set: `export` added to
+  `isCurrentlyPlayingInTriage`, `noRemixes`/`noLive`/`onlyOriginals`,
+  `undoDirectionFor`, and `idsIn`/`archivePeriod`; the assigned extraction pulled
+  `rule-playlist.ts`'s `perform()` apart into an exported `rulePlaylistPlan`
+  planner plus an exported, `pick`-injected `getRandomSlice`; `src/index.ts`'s
+  inline error ladder became an exported `normalizeActionError()` alongside
+  `export` on `afterCurrentTrack`/`doAfterCurrentTrack`/`actionNameFromEvent`; and
+  an unused `trackToData` import was dropped from `remove-track-mutation.ts`. No
+  behavior changed
+- Six new test files (`action-for-playlist`, `actionable-type`, `archive-id`,
+  `handler-routing`, `inbox-track-filters`, `track-data`); the rest of the gaps
+  extended files the prior wave already created
+- **210 → 351 tests, 13 → 19 files, 608 `expect()` calls, 0 failures**, `tsc`
+  clean, no `dist/` left behind. Every Tier 1 fix was confirmed by mutation
+  testing (19 hand-applied regressions, 19 caught, 0 escaped), and the full suite
+  ran clean under four timezones (`UTC`, `Pacific/Auckland`, `Asia/Kolkata`,
+  `America/New_York`), not just the two the archive tests pin against
+- See `changelog/2026-08-06_close-tier1-test-gaps.md`
 
 ### 2026-08-06 - History-Folder Tool: `--apply` Enabled
 
@@ -446,6 +484,48 @@ load-bearing at all.
 - Pre-change code zip + config were snapshotted; rollback commands are in the changelog entry
 - See `changelog/2026-08-04_bun-on-lambda.md`
 
+### 2026-08-04 - Action Testability: Pure Planners, Foundation Seams, and Four Bugfixes
+
+- **`perform()` is now a pure planner for eight actions.** Each gets a `gather(ctx)` shell (I/O)
+  and an exported `xPlan(snapshot)` (pure, the unit-test target): `promotePlan`/`demotePlan`,
+  `processPlaybackHistoryPlan`, `autoArtistPlaylistPlan`, `manualTriagePlan`, `archivePlan`,
+  `inboxPlan`, `undoPlan`. `RulePlaylistAction` instead gets an injected `pick` in place of two
+  `Math.random()` sites; `SkipToNextTrack` now goes through a real `SkipToNextTrackMutation`
+  instead of mutating inline and returning `[]`
+- New `PerformContext = { client, dynamo, now, settings }` replaces the old `{ dynamo }`
+  perform signature; `idThrottleMs` widens to accept `(settings) => number` so throttle windows
+  that depend on dev/prod stop reading the ambient `dev` global directly. Ambient `dev`/
+  `minutes`/`hours`/`days` reads are gone from `src/actions/` field initializers, which used to
+  throw `ReferenceError` when constructing an action outside the Lambda bootstrap
+- **`ArchiveAction`'s dead throttle is revived.** `getID()` was `` `archive:${this.created_at}` ``
+  — a fresh id every run, so the exact-match throttle lookup could never find a previous pass.
+  Now `` `archive:<YYYY-MM>` ``; `action_history`'s `(id, created_at)` key means the stable id
+  does not collide runs against each other
+- Four standalone bugs fixed: `UnsaveTrackMutation` recorded itself as `'save-track'` (no
+  backfill of already-stored rows — nothing replays them); missing `await`s in save/unsave
+  `mutate()` let a failed Spotify call report `'success'`; `TriageActionMutation` stamped
+  `action_at` from the clock at execution time instead of plan time; `ScanPlaylistsForInbox`'s
+  constructor fired unawaited I/O that `perform()` could race
+- `action_history` rows for save-track/unsave-track/triage-action mutations coming out of
+  promote/demote now store the trimmed `BasicTrackData` (5 fields) instead of the full
+  `spotify-web-api-node` `Track` blob that was landing there incidentally — TS only declared
+  `{ id }` but JS doesn't strip the rest
+- `spotify.ts` no longer resolves environment config at module-evaluation time — importing it
+  (for its types alone, which every gather shell does) used to create a floating, possibly-
+  rejected promise before any test ran
+- New test suite: `promote-plan`, `demote-plan`, `archive-plan`, `playback-plan`,
+  `auto-artist-plan`, `manual-triage-plan`, `rule-playlist-pick`, `inbox-plan`, `undo-plan`, and
+  `action-runner` — the last drives real `performActions()` end to end and is what closes the
+  gap flagged above under "`ListenSequence`'s ordering invariant is enforced by nothing." 210
+  pass / 0 fail, `tsc` clean
+- A follow-up review found and fixed 6 more issues on top of this — most notably, undo was
+  reversing whatever track was currently playing instead of the one named in the
+  `action_history` row it was replaying — see `changelog/2026-08-05_undo-identity-and-inbox-planner.md`
+- Still open: several action ids remain clock-derived (harmless today, since none of them
+  declare a throttle); manual Current → Inbox is still undetected; see the changelog for the
+  full list
+- See `changelog/2026-08-04_action-testability-and-bugfixes.md`
+
 ### 2026-08-02 - Adversarial-Review Fixes (High Priority)
 
 - **Listen writes are counted exactly once again.** A single failed listen write used to abort the action before the (deliberately last) watermark mutation ran, so every listen already written that pass was re-counted on the next run, and every run after, until the failure cleared. A run-scoped `ListenSequence` now advances the watermark only across an unbroken prefix of successful writes and skips the rest of the batch after a failure — the tail is deferred to the next run, which is what the watermark is for
@@ -467,7 +547,7 @@ load-bearing at all.
 - `ArchiveAction` now also detects manual changes: any row claiming `'inbox'`/`'promoted'` present in neither playlist is marked `'removed'`, after excluding tracks found in archive playlists (`isArchivePlaylistName` in `settings.ts`, tested) — **superseded 2026-08-02**, see above: `'promoted'` reconciles on liked status and the archive exclusion is gone
 - The sweep sets `status` only and never appends a triage action, so an explicit demote (has a `'remove'` entry) stays distinguishable from a silent disappearance
 - Costs: the reconciliation scan is a full table scan (still true, still deferred). Now `Dynamo.tracksWithLiveStatus()` — filtered and projected, but still a scan. The archive-exclusion walk is gone as of 2026-08-02
-- **Known gap:** manual Inbox → Current *is* caught (the Current backfill filters on `'promote'`, which a hand-dragged track lacks), but manual Current → Inbox is **not** (the Inbox backfill filters on `'inboxed'`, which a returning track already has) — status stays `'promoted'` while the track sits in Inbox. Both are `ProcessManualTriage.backfillStage()`. Deliberately deferred; see the changelog
+- **Known gap:** manual Inbox → Current _is_ caught (the Current backfill filters on `'promote'`, which a hand-dragged track lacks), but manual Current → Inbox is **not** (the Inbox backfill filters on `'inboxed'`, which a returning track already has) — status stays `'promoted'` while the track sits in Inbox. Both are `ProcessManualTriage.backfillStage()`. Deliberately deferred; see the changelog
 - See `changelog/2026-08-02_track-status-field.md`
 
 ### 2026-08-01 - Per-Stage Listen Counts
