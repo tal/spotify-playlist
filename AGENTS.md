@@ -30,6 +30,85 @@ bun run reauth
 bun run src/lambda-bun.ts
 ```
 
+### Local-only tool: `scripts/spotify-folders/`
+
+Moves root-level `YYYY - MonthName` archive playlists into a `History` folder.
+**Local-only, never deployed** — top-level `scripts/` is not in `publish.rb`'s
+`PAYLOAD` allowlist, so it is never staged into `build/lambda`. It talks to
+Spotify's **private** `spclient` rootlist API, which is undocumented,
+unversioned, and unsupported — expect it to break without notice.
+
+```bash
+# dry run (default) — purely additive: prints the plan to prepend eligible root
+# archives to History's front (newest first). Issues NO POST. Never reorders or
+# removes anything already there. Unrelated playlists and legacy-named archives
+# in History are expected and left untouched.
+bun run scripts/spotify-folders/move-archives-to-folder.ts
+
+# apply — performs the writes. No confirmation prompt: it applies the plan it
+# prints. Backs up live state before the first write, then converges.
+bun run scripts/spotify-folders/move-archives-to-folder.ts --apply
+
+# typecheck the tool (it lives outside the root tsconfig's rootDir)
+bunx tsc -p scripts/spotify-folders/tsconfig.json
+```
+
+**Monthly operator steps** (credential capture → dry run → apply → verify →
+recovery) are in `docs/monthly-archive-runbook.md`.
+
+As of 2026-08-05 the tool tolerates unrelated History content by default; the
+old `--tolerate-unrelated-history` flag is gone. See "Revision 5 — additive
+prepend model" in `docs/archive-to-history-folder-plan.md`.
+
+`--apply` **performs writes** (as of 2026-08-06). The default (no flag) is still
+a dry run that issues no POST. There is **no confirmation prompt** — `--apply`
+runs the plan it prints. The `rootlist/changes` protocol it speaks was
+transcribed from two real DevTools captures (see `docs/rootlist-capture.md §9`);
+it sends one `MOV` per POST, anchoring each archive to History's **id-only**
+start-group marker, and carries no `baseRevision`.
+
+Write-path safety, and how to stop it:
+
+- **Backup before the first POST** — a credential-free snapshot + plan is written
+  to `~/Library/Application Support/spotify-playlist/rootlist-backups/<timestamp>.json`
+  (path is printed).
+- **Recovery is re-running the command.** The loop recomputes from a fresh read
+  every iteration, so a partial run is intermediate, not corrupt — re-run to
+  converge. The backup is manual-restore evidence; there is no `--restore`.
+- `WRITE_MODE` in `scripts/spotify-folders/rootlist.ts` is the **kill switch**:
+  set it back to `'disabled'` and every write path throws before building a
+  request (`authorizeWrites()` returns `null`, `postRootlistChanges()` refuses as
+  its first statement).
+- **Verified only in dry-run so far** — the first real `--apply` will be the
+  first live write. `spclient.wg.spotify.com` remains unofficial and unversioned;
+  it can break at any time.
+
+Three environment values, two of them short-lived secrets:
+
+| Value | Secret? | Notes |
+|---|---|---|
+| `SPOTIFY_SPCLIENT_TOKEN` | **yes** | web-player bearer, without the `Bearer ` prefix. ~1 hour lifetime |
+| `SPOTIFY_CLIENT_TOKEN` | **yes** | anti-abuse `client-token` header value |
+| `SPOTIFY_USER_ID` | no | the user id embedded in the rootlist path |
+
+**Export the two secrets into an ephemeral shell — never into `.env`.** A
+`SessionStart` hook in `~/.claude/settings.json` auto-loads any `.env` in this
+directory into every future agent session, so a bearer pasted there stops
+being a one-hour secret. `SPOTIFY_USER_ID` is not a credential and may live in
+`.env` safely. The tool has no `dotenv` call — Bun loads `.env` natively — so
+there is nothing to configure either way.
+
+Capture instructions (DevTools ritual, plus a documented but fragile
+terminal-only token mint), the full proven wire contract, and the live
+account's precondition failures are all in `docs/rootlist-capture.md`.
+
+`tsconfig.json`'s `exclude` now lists `"scripts"` so that a `.ts` file under
+top-level `scripts/` cannot break `bun run typecheck` with TS6059
+(`rootDir` is `./src`, and the file has no `include`, so it falls back to
+`**/*` by default). The tool has its own `scripts/spotify-folders/tsconfig.json`
+for its local typecheck target; this line is confirmed inert — it does not
+change which files the root `bun run typecheck` compiles.
+
 ### Deployment
 
 ```bash
@@ -339,6 +418,20 @@ The durable fix is to move "which sets still run after an earlier failure" into
 load-bearing at all.
 
 ## Changelog
+
+### 2026-08-06 - History-Folder Tool: `--apply` Enabled
+
+- `--apply` now **performs writes** on the local-only `scripts/spotify-folders/` tool; the default (no flag) is still a dry run that issues no POST, and there is no confirmation prompt
+- The `rootlist/changes` protocol was **transcribed from two real DevTools captures** (URI-anchored `MOV`, **id-only** `spotify:start-group:<folderId>` anchor with the name stripped, no `baseRevision`); the tool sends one `MOV` per POST and converges by re-reading live state
+- Safety: credential-free backup before the first POST, per-iteration re-read (no blind replay), 401/403 fatal, stall + runaway bounds. `WRITE_MODE = 'enabled'` in `rootlist.ts` is the defence-in-depth kill switch; re-running is the recovery path
+- Verified only in dry-run — the first real `--apply` will be the first live write
+- See "Local-only tool: `scripts/spotify-folders/`" above and `changelog/2026-08-06_history-folder-enable-apply.md`
+
+### 2026-08-04 - Archive-to-History Folder Tool (Read-Only)
+
+- New local-only CLI under `scripts/spotify-folders/` reads Spotify's private `spclient` rootlist API and reports which root-level archive playlists would move into a `History` folder. Never deployed (`scripts/` is outside `publish.rb`'s `PAYLOAD` allowlist) and read-only by construction: `--apply` is hard-disabled and no write has ever been issued
+- See "Local-only tool: `scripts/spotify-folders/`" above for invocation, credentials, and the disabled-write gate
+- See `changelog/2026-08-04_archive-to-history-folder-read-only.md` for the live dry-run findings against the real account and what remains before writes can be enabled
 
 ### 2026-08-04 - Bun on Lambda
 

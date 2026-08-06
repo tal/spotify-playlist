@@ -1,0 +1,57 @@
+{
+  "// why": [
+    "The root tsconfig.json sets rootDir: ./src, so any .ts under top-level",
+    "scripts/ is a TS6059 error in that program. The root config therefore",
+    "excludes 'scripts' entirely, and this nested config is what actually",
+    "typechecks the tool: `bunx tsc --noEmit -p scripts/spotify-folders`.",
+    "",
+    "This file is NOT part of the Lambda payload. publish.rb copies an",
+    "allowlist (PAYLOAD = ['src', 'package.json', 'bun.lock', 'tsconfig.json'])",
+    "into build/lambda, and top-level scripts/ is never copied."
+  ],
+
+  "// rootDir": [
+    "NOT the tool directory. rootlist.ts imports src/utils/retry and the",
+    "archive-name round-trip test imports src/settings, so a rootDir of '.'",
+    "makes every one of those a TS6059 'not under rootDir' error. The repo",
+    "root is the smallest directory that actually contains the program.",
+    "It is inert regardless: noEmit is on, so rootDir only ever affects the",
+    "output layout that is never written."
+  ],
+
+  "// module": [
+    "Overridden from the root's 'commonjs'. move-archives-to-folder.ts guards",
+    "its entrypoint with `import.meta.main` — a Bun property, and the only",
+    "reliable direct-run check for a file Bun loads as ESM. `import.meta` is",
+    "a TS1343 error under 'commonjs'. Bun strips types and runs the file the",
+    "same way either way; this only changes what tsc will accept."
+  ],
+
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "types": ["bun", "node"]
+  },
+
+  "// exclude": [
+    "MANDATORY OVERRIDE, not tidiness. `extends` inherits the root's exclude,",
+    "and relative paths in a base config resolve against the BASE file's",
+    "directory — so the root's 'scripts' entry resolves to <repo>/scripts and",
+    "would exclude this entire tool, leaving tsc with no input files at all.",
+    "Re-stating exclude here drops that entry."
+  ],
+  "exclude": ["node_modules"],
+
+  "// include": [
+    "../../src/global.d.ts is required because the round-trip test imports",
+    "src/settings.ts, which reads the ambient `dev` and `days` globals that",
+    "src/-run-this-first.ts installs at runtime."
+  ],
+  "include": ["**/*.ts", "../../src/global.d.ts"],
+
+  "extends": "../../tsconfig.json"
+}
