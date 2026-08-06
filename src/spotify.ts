@@ -200,14 +200,14 @@ import { retrySpotifyCall, retrySpotifyCallWithTokenRefresh } from './utils/retr
 import { getSpotifyRetryConfig } from './utils/spotify-retry-config'
 import { LikedSongsCache } from './db/liked-songs-cache'
 
-const env = getEnv().then((env) => env.spotify)
+const spotifyEnv = () => getEnv().then((env) => env.spotify)
 
 export function displayTrack(track: Track): string {
   return `🎵 ${track.album.artists[0].name} - ${track.name}`
 }
 
 async function getClient(dynamo: Dynamo) {
-  const { clientId, clientSecret } = await env
+  const { clientId, clientSecret } = await spotifyEnv()
 
   let u = dynamo.user
 
@@ -278,7 +278,7 @@ export class Spotify {
 
     console.log('🔄 Access token expired, refreshing...')
 
-    const { clientId, clientSecret } = await env
+    const { clientId, clientSecret } = await spotifyEnv()
     const user = this._dynamo.user
 
     // Refresh the token using the current client (which has refreshToken set)

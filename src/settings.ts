@@ -55,6 +55,10 @@ export function buildArchiveMatcher(prefix?: string) {
   }
 }
 
+const MINUTE_MS = 1000 * 60
+const HOUR_MS = MINUTE_MS * 60
+const DAY_MS = HOUR_MS * 24
+
 export async function settings() {
   if (dev.isDev) {
     return {
@@ -63,7 +67,8 @@ export async function settings() {
       releaseRadar: 'Release Radar',
       discoverWeekly: 'Discover Weekly',
       starred: 'Starred',
-      timeToArchive: 1 * days,
+      timeToArchive: 1 * DAY_MS,
+      promoteThrottleMs: 5 * MINUTE_MS,
       archivePlaylistNameFor: buildArchiveNamer('[Test]'),
     }
   } else {
@@ -73,8 +78,11 @@ export async function settings() {
       releaseRadar: 'Release Radar',
       discoverWeekly: 'Discover Weekly',
       starred: 'Starred',
-      timeToArchive: 30 * days,
+      timeToArchive: 30 * DAY_MS,
+      promoteThrottleMs: 5 * HOUR_MS,
       archivePlaylistNameFor: buildArchiveNamer(),
     }
   }
 }
+
+export type Settings = Awaited<ReturnType<typeof settings>>

@@ -1,6 +1,11 @@
-import { TrackAction, trackToData } from './track-action'
+import {
+  TrackAction,
+  demotePlan,
+  promotePlan,
+  trackToData,
+} from './track-action'
 import { Mutation } from '../mutations/mutation'
-import { Action } from './action'
+import { Action, PerformContext } from './action'
 
 export class DemoteAction extends TrackAction implements Action {
   readonly type: string = 'demote'
@@ -15,17 +20,16 @@ export class DemoteAction extends TrackAction implements Action {
   }
 
   async getID(): Promise<string> {
-    const currentTrack = await this.track()
-    if (!currentTrack) throw 'no track provided 1'
+    if (!this.trackURI) throw 'no track provided 1'
 
-    return `demote:${currentTrack.uri}`
+    return `demote:${this.trackURI}`
   }
 
-  perform() {
-    return this.demoteTrack()
+  async perform(ctx: PerformContext): Promise<Mutation<any>[][]> {
+    return demotePlan(await this.gatherDemote(ctx.client))
   }
 
-  undo(): Promise<Mutation<any>[][]> {
-    return this.promoteTrack()
+  async undo(): Promise<Mutation<any>[][]> {
+    return promotePlan(await this.gatherPromote())
   }
 }

@@ -190,16 +190,20 @@ export class Dynamo {
     return sortedItems.slice(0, limit)
   }
 
-  async markActionAsUndone(actionId: string) {
+  async markActionAsUndone(
+    { id, created_at }: { id: string; created_at: number },
+    undoneAt: number,
+  ) {
     const params: UpdateCommandInput = {
       TableName: 'action_history',
       Key: {
-        id: this.gId(actionId),
+        id: this.gId(id),
+        created_at,
       },
       UpdateExpression: 'SET undone = :true, undone_at = :timestamp',
       ExpressionAttributeValues: {
         ':true': true,
-        ':timestamp': new Date().getTime(),
+        ':timestamp': undoneAt,
       },
     }
 
@@ -922,9 +926,9 @@ const STATUS_BY_TRIAGE_ACTION: Record<
 > = {
   inboxed: 'inbox',
   promote: 'promoted',
-  // Only `demoteTrack()` emits 'remove', so this is the explicit demote signal.
+  // Only `demotePlan()` emits 'remove', so this is the explicit demote signal.
   remove: 'removed',
-  // Status-neutral on purpose. `promoteTrack()` pushes 'upvote' last on EVERY
+  // Status-neutral on purpose. `promotePlan()` pushes 'upvote' last on EVERY
   // promote, after the conditional 'promote' entry — mapping it to a state
   // would clobber 'promoted' on every promotion to Current.
   upvote: null,

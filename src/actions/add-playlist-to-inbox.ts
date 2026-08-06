@@ -1,19 +1,73 @@
-import { Dynamo } from '../db/dynamo'
 import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { Mutation } from '../mutations/mutation'
 import { TriageActionMutation } from '../mutations/triage-action-mutation'
-import { Spotify } from '../spotify'
-import { Action } from './action'
+import { PlaylistID, Spotify } from '../spotify'
+import { Action, PerformContext } from './action'
 import { getTriageInfo } from './actionable-type'
 
 type PlaylistTrack = import('spotify-web-api-node').PlaylistTrack
+
+/**
+ * Everything `inboxPlan` decides from. `seenTrackIds` are the tracks the `track`
+ * table already knows — the record of "this has been triaged before", which
+ * survives the track leaving every playlist — and `inboxTrackIds` is Inbox as it
+ * stands right now.
+ */
+export interface InboxSnapshot {
+  playlistTracks: PlaylistTrack[]
+  seenTrackIds: string[]
+  inboxTrackIds: string[]
+  inbox: PlaylistID
+  now: number
+  trackFilter?: (track: PlaylistTrack) => boolean
+}
+
+/**
+ * A track earns a place in Inbox only if the filter keeps it, nothing in the
+ * `track` table has seen it, and Inbox does not already hold it. Each survivor
+ * gets an `'inboxed'` triage action so the next run counts it as seen.
+ */
+export function inboxPlan(snapshot: InboxSnapshot): Mutation<any>[][] {
+  const { playlistTracks, inbox, now, trackFilter } = snapshot
+
+  const skip = new Set([...snapshot.seenTrackIds, ...snapshot.inboxTrackIds])
+
+  const candidates = trackFilter
+    ? playlistTracks.filter(trackFilter)
+    : playlistTracks
+
+  const tracks: { id: string; uri: string }[] = []
+  for (let { track } of candidates) {
+    // A source playlist can list the same track twice; adding to `skip` as we
+    // go keeps the second copy from earning its own pair of mutations.
+    if (skip.has(track.id)) continue
+    skip.add(track.id)
+
+    tracks.push({ id: track.id, uri: track.uri })
+  }
+
+  if (tracks.length === 0) return []
+
+  return [
+    [
+      new AddTrackMutation({ tracks, playlist: inbox }),
+      ...tracks.map(
+        ({ id }) =>
+          new TriageActionMutation({
+            track: { id },
+            actionType: 'inboxed',
+            action_at: now,
+          }),
+      ),
+    ],
+  ]
+}
 
 export class AddPlaylistToInbox implements Action {
   type: string = 'add-playlist-to-inbox'
   // readonly idThrottleMs = 20 * minutes
   readonly playlistID: string
   readonly created_at: number
-  readonly tracks: Promise<PlaylistTrack[]>
   spotify: Spotify
 
   constructor(
@@ -24,63 +78,36 @@ export class AddPlaylistToInbox implements Action {
     this.spotify = client
     this.playlistID = playlistID
     this.created_at = new Date().getTime()
-
-    this.tracks = client.tracksForPlaylist({ id: playlistID })
   }
 
   async getID() {
     return `inbox-playlist:${this.playlistID}`
   }
 
-  async perform({ dynamo }: { dynamo: Dynamo }) {
-    let tracks = await this.tracks
-    if (this.trackFilter) {
-      tracks = tracks.filter(this.trackFilter)
-    }
-    const trackIDs = tracks.map((t) => t.track.id)
-    const seenTracks = await dynamo.getSeenTracks(trackIDs)
+  async gather({ dynamo }: PerformContext): Promise<InboxSnapshot> {
+    const playlistTracks = await this.spotify.tracksForPlaylist({
+      id: this.playlistID,
+    })
 
-    const idsToAdd = seenTracks
-      .map((t) => {
-        if (!t.found) {
-          return `spotify:track:${t.id}`
-        }
-      })
-      .filter((uri): uri is string => !!uri)
-      .map((uri) => ({ uri }))
+    const seenTracks = await dynamo.getSeenTracks(
+      playlistTracks.map((t) => t.track.id),
+    )
 
     const { inbox } = await getTriageInfo(this.spotify)
+    const inboxTracks = await this.spotify.tracksForPlaylist({ id: inbox.id })
 
-    const idsNotSeen: typeof idsToAdd = []
-    for (let id of idsToAdd) {
-      const trackInPlaylist = await this.spotify.trackInPlaylist(id, inbox)
-      if (!trackInPlaylist) {
-        idsNotSeen.push(id)
-      }
+    return {
+      playlistTracks,
+      seenTrackIds: seenTracks.filter((t) => t.found).map((t) => t.id),
+      inboxTrackIds: inboxTracks.map((t) => t.track.id),
+      inbox,
+      now: this.created_at,
+      trackFilter: this.trackFilter,
     }
+  }
 
-    if (idsNotSeen.length === 0) {
-      return []
-    }
-
-    const addTracks = new AddTrackMutation({
-      tracks: idsNotSeen,
-      playlist: inbox,
-    })
-    const inboxedMutatons = idsNotSeen.map(({ uri }) => {
-      const m = uri.match(/^spotify:track:(.+)/)
-      if (m) {
-        const id = m[1]
-        return new TriageActionMutation({
-          track: { id },
-          actionType: 'inboxed',
-        })
-      } else {
-        throw 'everything should be a valid uri'
-      }
-    })
-
-    return [[addTracks, ...inboxedMutatons]]
+  async perform(ctx: PerformContext): Promise<Mutation<any>[][]> {
+    return inboxPlan(await this.gather(ctx))
   }
 
   async forStorage(mutations: Mutation<any>[]): Promise<ActionHistoryItemData> {

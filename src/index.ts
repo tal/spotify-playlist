@@ -3,7 +3,10 @@ import { Spotify } from './spotify'
 import type { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
 import { MagicPromoteAction } from './actions/magic-promote-action'
 import { performActions, Action } from './actions/action'
-import { AfterTrackActionAction } from './actions/track-action'
+import {
+  AfterTrackActionAction,
+  currentTrackIdentity,
+} from './actions/track-action'
 import { ArchiveAction } from './actions/archive-action'
 import { DemoteAction } from './actions/demote-action'
 import { actionForPlaylist } from './actions/action-for-playlist'
@@ -22,7 +25,7 @@ function notEmpty<TValue>(
   return value !== null && value !== undefined
 }
 
-function afterCurrentTrack(ev: APIGatewayProxyEvent) {
+export function afterCurrentTrack(ev: APIGatewayProxyEvent) {
   const shouldSkip =
     ev.queryStringParameters && ev.queryStringParameters['and-skip']
 
@@ -33,7 +36,7 @@ function afterCurrentTrack(ev: APIGatewayProxyEvent) {
   return afterCurrentTrack
 }
 
-function doAfterCurrentTrack(client: Spotify, ev: APIGatewayProxyEvent) {
+export function doAfterCurrentTrack(client: Spotify, ev: APIGatewayProxyEvent) {
   const foo = afterCurrentTrack(ev)
 
   switch (foo) {
@@ -134,24 +137,39 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       const archive = new ArchiveAction(spotify)
       actions = archive
       break
+    // The track is resolved here, before any of these actions is built, so the
+    // id each one throttles on is fixed data rather than another player read —
+    // and so a leading skip cannot change what gets promoted or demoted.
     case 'promotes':
-      actions = [new SkipToNextTrack(spotify), new MagicPromoteAction(spotify)]
+      actions = [
+        new SkipToNextTrack(spotify),
+        new MagicPromoteAction(spotify, await currentTrackIdentity(spotify)),
+      ]
       break
     case 'promote':
       actions = [
         doAfterCurrentTrack(spotify, ev),
-        new MagicPromoteAction(spotify),
+        new MagicPromoteAction(spotify, await currentTrackIdentity(spotify)),
       ]
       break
     case 'demotes':
-      actions = [new SkipToNextTrack(spotify), new DemoteAction(spotify)]
+      actions = [
+        new SkipToNextTrack(spotify),
+        new DemoteAction(spotify, await currentTrackIdentity(spotify)),
+      ]
       break
     case 'demote':
-      actions = [doAfterCurrentTrack(spotify, ev), new DemoteAction(spotify)]
+      actions = [
+        doAfterCurrentTrack(spotify, ev),
+        new DemoteAction(spotify, await currentTrackIdentity(spotify)),
+      ]
       break
     case 'undo':
       const actionId = ev.queryStringParameters?.['action-id']
-      const actionType = ev.queryStringParameters?.['action-type'] as 'promote' | 'demote' | undefined
+      const actionType = ev.queryStringParameters?.['action-type'] as
+        | 'promote'
+        | 'demote'
+        | undefined
       actions = new UndoAction(spotify, dynamo, { actionId, actionType })
       break
     case 'undo-last':
@@ -235,12 +253,14 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         statusCode: 200,
         body: JSON.stringify({
           metadata: metadata || { message: 'No cache found' },
-          sampleTracks: cachedSongs.map(s => ({
+          sampleTracks: cachedSongs.map((s) => ({
             name: s.trackName,
             artist: s.artistName,
             addedAt: new Date(s.addedAt).toISOString(),
           })),
-          cacheAge: metadata ? `${Math.floor((Date.now() - metadata.lastSyncedAt) / 1000 / 60)} minutes` : 'N/A',
+          cacheAge: metadata
+            ? `${Math.floor((Date.now() - metadata.lastSyncedAt) / 1000 / 60)} minutes`
+            : 'N/A',
         }),
       }
     case 'listen-stats': {
@@ -318,20 +338,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     // Handle errors properly with descriptive messages
     console.error('Error performing action:', err)
 
-    let errorMessage = 'Unknown error occurred'
-    let statusCode = 500
-
-    if (typeof err === 'string') {
-      errorMessage = err
-      // Business logic errors (like "cannot promote if confirmed") should be 400
-      if (err.includes('cannot') || err.includes('no track') || err.includes('not found')) {
-        statusCode = 400
-      }
-    } else if (err instanceof Error) {
-      errorMessage = err.message
-    } else if (err && typeof err === 'object') {
-      errorMessage = JSON.stringify(err)
-    }
+    const { statusCode, errorMessage } = normalizeActionError(err)
 
     return {
       statusCode,
@@ -343,7 +350,37 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
   }
 }
 
-function actionNameFromEvent(ev: APIGatewayProxyEvent) {
+export type NormalizedActionError = {
+  statusCode: number
+  errorMessage: string
+}
+
+export function normalizeActionError(err: unknown): NormalizedActionError {
+  if (typeof err === 'string') {
+    // Business logic errors (like "cannot promote if confirmed") should be 400
+    return {
+      statusCode:
+        err.includes('cannot') ||
+        err.includes('no track') ||
+        err.includes('not found')
+          ? 400
+          : 500,
+      errorMessage: err,
+    }
+  }
+
+  if (err instanceof Error) {
+    return { statusCode: 500, errorMessage: err.message }
+  }
+
+  if (err && typeof err === 'object') {
+    return { statusCode: 500, errorMessage: JSON.stringify(err) }
+  }
+
+  return { statusCode: 500, errorMessage: 'Unknown error occurred' }
+}
+
+export function actionNameFromEvent(ev: APIGatewayProxyEvent) {
   let actionName: string | null = null
 
   // API Gateway with path parameters

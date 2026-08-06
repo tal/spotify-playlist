@@ -1,24 +1,84 @@
-import { Action } from './action'
-import { Spotify, TrackForMove } from '../spotify'
+import { Action, PerformContext } from './action'
+import { Spotify, TrackForMove, PlaylistID } from '../spotify'
 import { PlaylistTrack, Track } from 'spotify-web-api-node'
 import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { Mutation } from '../mutations/mutation'
 
+export interface AutoArtistPlaylistSnapshot {
+  playlistTracks: PlaylistTrack[]
+  savedTracks: Track[]
+  playlist: PlaylistID
+}
+
+function artists(tracks: PlaylistTrack[]) {
+  const artistIDs: Set<string> = new Set()
+
+  for (let track of tracks) {
+    artistIDs.add(track.track.artists[0].id)
+  }
+
+  return artistIDs
+}
+
+function savedTracksForArtists(tracks: PlaylistTrack[], savedTracks: Track[]) {
+  const artistIDs = artists(tracks)
+
+  const forArtists: Track[] = []
+  for (let savedTrack of savedTracks) {
+    if (artistIDs.has(savedTrack.artists[0].id)) {
+      forArtists.push(savedTrack)
+    }
+  }
+
+  return forArtists
+}
+
+function tracksToAdd(tracks: PlaylistTrack[], savedTracks: Track[]) {
+  const forArtists = savedTracksForArtists(tracks, savedTracks)
+
+  const existingTrackIDs: Set<string> = new Set()
+  for (let track of tracks) {
+    existingTrackIDs.add(track.track.id)
+  }
+
+  const toAdd: TrackForMove[] = []
+  for (let track of forArtists) {
+    if (!existingTrackIDs.has(track.id)) {
+      toAdd.push(track)
+    }
+  }
+
+  return toAdd
+}
+
+export function autoArtistPlaylistPlan(
+  snapshot: AutoArtistPlaylistSnapshot,
+): Mutation<any>[][] {
+  const toAdd = tracksToAdd(snapshot.playlistTracks, snapshot.savedTracks)
+
+  if (toAdd.length === 0) {
+    console.error(`No tracks to be added to playlist:${snapshot.playlist.id}`)
+    return []
+  }
+
+  const mutation = new AddTrackMutation({
+    tracks: toAdd,
+    playlist: snapshot.playlist,
+  })
+
+  return [[mutation]]
+}
+
 export class AutoArtistPlaylist implements Action {
   type: string = 'auto-artist-playlist'
   private playlistID: string
-  private tracks: Promise<PlaylistTrack[]>
-  private savedTracks: Promise<Track[]>
   private created_at: number
   constructor(
-    client: Spotify,
+    private client: Spotify,
     { id: playlistID }: { id: string; type?: 'playlist' },
   ) {
     this.playlistID = playlistID
     this.created_at = new Date().getTime()
-
-    this.tracks = client.tracksForPlaylist({ id: playlistID })
-    this.savedTracks = client.mySavedTracks()
   }
 
   async getID() {
@@ -35,64 +95,20 @@ export class AutoArtistPlaylist implements Action {
     }
   }
 
-  async artists() {
-    const tracks = await this.tracks
+  async gather(_ctx: PerformContext): Promise<AutoArtistPlaylistSnapshot> {
+    const [playlistTracks, savedTracks] = await Promise.all([
+      this.client.tracksForPlaylist({ id: this.playlistID }),
+      this.client.mySavedTracks(),
+    ])
 
-    const artistIDs: Set<string> = new Set()
-
-    for (let track of tracks) {
-      artistIDs.add(track.track.artists[0].id)
-    }
-
-    return artistIDs
-  }
-
-  async savedTracksForArtists() {
-    const savedTracks = await this.savedTracks
-    const artistIDs = await this.artists()
-
-    const tracks: Track[] = []
-    for (let savedTrack of savedTracks) {
-      if (artistIDs.has(savedTrack.artists[0].id)) {
-        tracks.push(savedTrack)
-      }
-    }
-
-    return tracks
-  }
-
-  async tracksToAdd() {
-    const savedTracks = await this.savedTracksForArtists()
-    const existingTracks = (await this.tracks).map((t) => t.track)
-
-    const existingTrackIDs: Set<string> = new Set()
-    for (let track of existingTracks) {
-      existingTrackIDs.add(track.id)
-    }
-
-    const tracksToAdd: TrackForMove[] = []
-    for (let track of savedTracks) {
-      if (!existingTrackIDs.has(track.id)) {
-        tracksToAdd.push(track)
-      }
-    }
-
-    return tracksToAdd
-  }
-
-  async perform() {
-    const tracksToAdd = await this.tracksToAdd()
-
-    if (tracksToAdd.length === 0) {
-      console.error(`No tracks to be added to playlist:${this.playlistID}`)
-      return []
-    }
-
-    const mutation = new AddTrackMutation({
-      tracks: tracksToAdd,
+    return {
+      playlistTracks,
+      savedTracks,
       playlist: { id: this.playlistID },
-    })
+    }
+  }
 
-    return [[mutation]]
+  async perform(ctx: PerformContext) {
+    return autoArtistPlaylistPlan(await this.gather(ctx))
   }
 }

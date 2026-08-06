@@ -1,14 +1,37 @@
 import { Dynamo } from '../db/dynamo'
 import { Mutation } from '../mutations/mutation'
+import { Settings, settings } from '../settings'
 import { Spotify } from '../spotify'
+
+export interface PerformContext {
+  client: Spotify
+  dynamo: Dynamo
+  now: number
+  settings: Settings
+}
+
+/**
+ * A window given either outright or as a function of the resolved settings —
+ * the dev/prod branch lives in `settings()`, and an action that wants the
+ * branched value must not reach for the ambient `dev` global to get it.
+ */
+export type ThrottleWindow = number | ((settings: Settings) => number)
 
 export interface Action {
   forStorage?: (mutations: Mutation<any>[]) => Promise<ActionHistoryItemData>
   getID: () => Promise<string>
-  perform: ({ dynamo }: { dynamo: Dynamo }) => Promise<Mutation<any>[][]>
-  idThrottleMs?: number | undefined
+  perform: (ctx: PerformContext) => Promise<Mutation<any>[][]>
+  idThrottleMs?: ThrottleWindow | undefined
   type: string
   description?: () => Promise<string>
+}
+
+function throttleMsFor(action: Action, settings: Settings) {
+  const { idThrottleMs } = action
+
+  return typeof idThrottleMs === 'function'
+    ? idThrottleMs(settings)
+    : idThrottleMs
 }
 
 type PerformActionReason = 'throttled' | 'shouldnt-act' | 'success'
@@ -20,10 +43,11 @@ async function performAction(
   client: Spotify,
   action: Action,
 ): Promise<Result<ActionResult, PerformActionReason>> {
-  const { idThrottleMs } = action
+  const now = new Date().getTime()
+  const resolvedSettings = await settings()
+  const idThrottleMs = throttleMsFor(action, resolvedSettings)
 
   if (idThrottleMs) {
-    const now = new Date().getTime()
     const since = now - idThrottleMs
     const history = await dynamo.getActionHistory(await action.getID(), since)
 
@@ -34,7 +58,12 @@ async function performAction(
     }
   }
 
-  const mutationSets = await action.perform({ dynamo })
+  const mutationSets = await action.perform({
+    client,
+    dynamo,
+    now,
+    settings: resolvedSettings,
+  })
   let allMutations: Mutation<any>[] = []
 
   for (let mutations of mutationSets) {

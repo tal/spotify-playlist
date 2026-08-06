@@ -1,6 +1,5 @@
 import { Mutation, MutationTypes } from './mutation'
 import { TrackForMove, PlaylistID, Spotify } from '../spotify'
-import { trackToData } from '../actions/track-action'
 import { Dynamo } from '../db/dynamo'
 
 export interface RemoveTrackMoveMutationData {

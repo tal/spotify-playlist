@@ -16,17 +16,12 @@ async function getKey(key: string) {
 let env: Promise<Env> | null = null
 
 async function genEnv(): Promise<Env> {
-  const spotifyClientId = getKey('SPOTIFY_CLIENT_ID')
-  const spotifyClientSecret = getKey('SPOTIFY_CLIENT_SECRET')
+  const [clientId, clientSecret] = await Promise.all([
+    getKey('SPOTIFY_CLIENT_ID'),
+    getKey('SPOTIFY_CLIENT_SECRET'),
+  ])
 
-  const env = {
-    spotify: {
-      clientId: await spotifyClientId,
-      clientSecret: await spotifyClientSecret,
-    },
-  }
-
-  return env
+  return { spotify: { clientId, clientSecret } }
 }
 
 export function getEnv(): Promise<Env> {

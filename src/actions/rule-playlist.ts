@@ -1,9 +1,8 @@
-import { Dynamo } from '../db/dynamo'
 import { Mutation } from '../mutations/mutation'
 import { AddTrackMutation } from '../mutations/add-track-mutation'
 import { RenamePlaylistMutation } from '../mutations/rename-playlist-mutation'
-import { Spotify, TrackForMove } from '../spotify'
-import { Action } from './action'
+import { PlaylistID, Spotify, TrackForMove } from '../spotify'
+import { Action, PerformContext } from './action'
 import { EmptyPlaylistMutation } from '../mutations/empty-playlist-mutation'
 import { PlaylistTrack } from 'spotify-web-api-node'
 import { getTriageInfo } from './actionable-type'
@@ -13,15 +12,57 @@ import { getTriageInfo } from './actionable-type'
 // saved tracks were mixed in this round.
 const SMART_PLAYLIST_PREFIX = 'Smart Playlist'
 
-function getRandomSlice<T>(arr: T[], n: number): T[] {
+export function getRandomSlice<T>(
+  arr: T[],
+  n: number,
+  pick: (n: number) => number,
+): T[] {
   if (n > arr.length) return arr
-  const start = Math.floor(Math.random() * (arr.length - n + 1))
+  const start = pick(arr.length - n + 1)
   return arr.slice(start, start + n)
 }
 
-function getRandomElement<T>(arr: T[]): T {
-  const offset = Math.floor(Math.random() * arr.length)
+function getRandomElement<T>(arr: T[], pick: (n: number) => number): T {
+  const offset = pick(arr.length)
   return arr[offset]
+}
+
+export interface RulePlaylistSnapshot {
+  playlist: PlaylistID
+  tracks: TrackForMove[]
+  likedTracks: TrackForMove[]
+  artistName: string
+}
+
+export function rulePlaylistPlan(
+  snapshot: RulePlaylistSnapshot,
+): Mutation<any>[][] {
+  const playlist = { id: snapshot.playlist.id }
+
+  const addTracksMutation = new AddTrackMutation({
+    tracks: snapshot.tracks,
+    playlist,
+  })
+
+  const likedTracksMutation = new AddTrackMutation({
+    tracks: snapshot.likedTracks,
+    playlist,
+  })
+
+  // Rewrite the trailing part of the name to show whose saved tracks are mixed in
+  const renameMutation = new RenamePlaylistMutation({
+    playlist,
+    name: `${SMART_PLAYLIST_PREFIX} — ${snapshot.artistName}`,
+  })
+
+  return [
+    [
+      new EmptyPlaylistMutation({
+        playlist,
+      }),
+    ],
+    [addTracksMutation, likedTracksMutation, renameMutation],
+  ]
 }
 
 export class RulePlaylistAction implements Action {
@@ -30,6 +71,7 @@ export class RulePlaylistAction implements Action {
   constructor(
     readonly client: Spotify,
     readonly options: { rule: string },
+    readonly pick: (n: number) => number = (n) => Math.floor(Math.random() * n),
   ) {}
 
   description?: (() => Promise<string>) | undefined
@@ -41,7 +83,7 @@ export class RulePlaylistAction implements Action {
   forStorage = undefined
 
   async randomStarredArtistTracks(tracks: PlaylistTrack[]) {
-    const artist = getRandomElement(tracks).track.artists[0]
+    const artist = getRandomElement(tracks, this.pick).track.artists[0]
     const savedTracks = await this.client.mySavedTracks()
     // Match on ANY credited artist, not just the primary one — otherwise every
     // collab / feature where the artist is billed second gets dropped.
@@ -54,14 +96,12 @@ export class RulePlaylistAction implements Action {
     return { artist, tracks: artistTracks }
   }
 
-  async perform({ dynamo }: { dynamo: Dynamo }) {
+  async perform(_ctx: PerformContext) {
     this.client.mySavedTracks() // Prime the cache
 
     const playlist = await this.client.playlistByPrefix(SMART_PLAYLIST_PREFIX)
     if (!playlist) {
-      console.error(
-        `No playlist found with prefix "${SMART_PLAYLIST_PREFIX}"`,
-      )
+      console.error(`No playlist found with prefix "${SMART_PLAYLIST_PREFIX}"`)
       return []
     }
     const playlistId = { id: playlist.id }
@@ -79,37 +119,21 @@ export class RulePlaylistAction implements Action {
 
     const streamableTracks = tracks.filter(isStreamableTrack)
 
-    const randomTracks = getRandomSlice(streamableTracks, 40).map((track) => ({
-      uri: track.track.uri,
-    }))
-
-    const addTracksMutation = new AddTrackMutation({
-      tracks: randomTracks,
-      playlist: playlistId,
-    })
+    const randomTracks = getRandomSlice(streamableTracks, 40, this.pick).map(
+      (track) => ({
+        uri: track.track.uri,
+      }),
+    )
 
     const { artist, tracks: likedTracks } =
       await this.randomStarredArtistTracks(streamableTracks)
 
-    const likedTracksMutation = new AddTrackMutation({
-      tracks: likedTracks,
+    return rulePlaylistPlan({
       playlist: playlistId,
+      tracks: randomTracks,
+      likedTracks,
+      artistName: artist.name,
     })
-
-    // Rewrite the trailing part of the name to show whose saved tracks are mixed in
-    const renameMutation = new RenamePlaylistMutation({
-      playlist: playlistId,
-      name: `${SMART_PLAYLIST_PREFIX} — ${artist.name}`,
-    })
-
-    return [
-      [
-        new EmptyPlaylistMutation({
-          playlist: playlistId,
-        }),
-      ],
-      [addTracksMutation, likedTracksMutation, renameMutation],
-    ]
   }
 
   idThrottleMs?: number | undefined

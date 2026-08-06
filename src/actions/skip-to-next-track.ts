@@ -1,19 +1,17 @@
-import { Dynamo } from '../db/dynamo'
-import { Mutation } from '../mutations/mutation'
 import { Spotify } from '../spotify'
-import { Action } from './action'
+import { Action, PerformContext } from './action'
+import { SkipToNextTrackMutation } from '../mutations/skip-to-next-track-mutation'
 
 export class SkipToNextTrack implements Action {
   type = 'skip-to-next-track'
   constructor(private client: Spotify) {}
 
   async getID() {
-    return `skip-to-next-track:${new Date().getTime()}`
+    return 'skip-to-next-track'
   }
 
-  async perform() {
-    await this.client.skipToNextTrack()
-    return []
+  async perform(_ctx: PerformContext) {
+    return [[new SkipToNextTrackMutation({})]]
   }
 
   async description() {

@@ -35,6 +35,8 @@ export type MutationTypes =
   | 'set-track-status'
   | 'empty-playlist'
   | 'rename-playlist'
+  | 'skip-to-next-track'
+  | 'mark-action-undone'
 
 export interface MutationData<T> {
   type: 'mutation'

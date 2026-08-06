@@ -1,9 +1,14 @@
-import { TrackAction, trackToData } from './track-action'
+import {
+  TrackAction,
+  demotePlan,
+  promotePlan,
+  trackToData,
+} from './track-action'
 import { Mutation } from '../mutations/mutation'
-import { Action } from './action'
+import { Action, PerformContext, ThrottleWindow } from './action'
 
 export class MagicPromoteAction extends TrackAction implements Action {
-  idThrottleMs: number = 5 * (dev.isDev ? minutes : hours)
+  idThrottleMs: ThrottleWindow = (settings) => settings.promoteThrottleMs
   type: string = 'magic-promote'
 
   async forStorage(
@@ -19,17 +24,16 @@ export class MagicPromoteAction extends TrackAction implements Action {
   }
 
   async getID() {
-    const currentTrack = await this.track()
-    if (!currentTrack) throw 'no track provided 1'
+    if (!this.trackURI) throw 'no track provided 1'
 
-    return `promote:${currentTrack.uri}`
+    return `promote:${this.trackURI}`
   }
 
-  perform(): Promise<Mutation<any>[][]> {
-    return this.promoteTrack()
+  async perform(ctx: PerformContext): Promise<Mutation<any>[][]> {
+    return promotePlan(await this.gatherPromote(ctx.client))
   }
 
-  undo(): Promise<Mutation<any>[][]> {
-    return this.demoteTrack()
+  async undo(): Promise<Mutation<any>[][]> {
+    return demotePlan(await this.gatherDemote())
   }
 }

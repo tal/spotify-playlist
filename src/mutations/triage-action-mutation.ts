@@ -4,6 +4,7 @@ import { Mutation, MutationTypes } from './mutation'
 interface TriageActionData {
   track: { id: string }
   actionType: TrackTriageActionType
+  action_at: number
 }
 
 export class TriageActionMutation extends Mutation<TriageActionData> {
@@ -12,7 +13,7 @@ export class TriageActionMutation extends Mutation<TriageActionData> {
   protected async mutate({ dynamo }: { dynamo: Dynamo }) {
     await dynamo.addTrackTriageAction(this.data.track, {
       action_type: this.data.actionType,
-      action_at: new Date().getTime(),
+      action_at: this.data.action_at,
     })
   }
 }

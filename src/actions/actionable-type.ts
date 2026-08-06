@@ -51,7 +51,7 @@ export async function currentlyPlayingActableType(
   return 'generic_track'
 }
 
-async function isCurrentlyPlayingInTriage(
+export async function isCurrentlyPlayingInTriage(
   player: PlayBackContext,
   triage: TriagePlaylists,
 ) {

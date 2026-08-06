@@ -6,9 +6,9 @@ interface UnsaveTrackData {
 }
 
 export class UnsaveTrackMutation extends Mutation<UnsaveTrackData> {
-  mutationType: MutationTypes = 'save-track'
+  mutationType: MutationTypes = 'unsave-track'
 
   protected async mutate({ client }: { client: Spotify }) {
-    client.unsaveTrack(...this.data.tracks.map((t) => t.id))
+    await client.unsaveTrack(...this.data.tracks.map((t) => t.id))
   }
 }

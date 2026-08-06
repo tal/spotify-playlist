@@ -6,6 +6,7 @@ import { Spotify } from './spotify'
 import { MagicPromoteAction } from './actions/magic-promote-action'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { DemoteAction } from './actions/demote-action'
+import { currentTrackIdentity } from './actions/track-action'
 
 async function main() {
   const dynamo = await getDynamo('koalemos')
@@ -17,8 +18,9 @@ async function main() {
   // const result = await performActions(dynamo, spotify, action)
 
   const skip = new SkipToNextTrack(spotify)
-  let action: Action = new MagicPromoteAction(spotify)
-  action = new DemoteAction(spotify)
+  const playing = await currentTrackIdentity(spotify)
+  let action: Action = new MagicPromoteAction(spotify, playing)
+  action = new DemoteAction(spotify, playing)
   const result = await performActions(dynamo, spotify, [skip, action])
   console.log(result)
   return
