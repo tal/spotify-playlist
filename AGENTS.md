@@ -234,6 +234,29 @@ changing it; do not silently turn a future rule into a claim about production.
   playlist. A play from Liked Songs, Search, an album, or contextless autoplay
   increments `play_count` only, even if the track belongs to Inbox or Current.
 
+#### Operator's star-rating mental model
+
+The user's own organizational system layers a star rating on top of the
+lifecycle above. It is how the operator *thinks about* the library, not a field
+stored in DynamoDB:
+
+- **Liked = 3 stars** — a saved track (the `Liked` lifecycle state / Spotify's
+  saved-track library).
+- **starred = 4 stars** — a **playlist**. Membership here is the 4-star tier.
+- **all time = 5 stars** — a **playlist**. Membership here is the 5-star tier.
+- **1–2 stars = the `Removed` state** — the operator does not want to hear these
+  again and they carry no curated tier. This is the *intent* behind
+  Demote/`Removed`. Mind the tracking distinction: the system still keeps a
+  `status: 'removed'` row as a tombstone so `ScanPlaylistsForInbox` won't
+  re-import the track from Discover Weekly / Release Radar. "Not worth tracking"
+  is about curation, not about deleting the dedup record.
+
+`starred` and `all time` are real Spotify playlists, so a track's star rating is
+read from playlist membership, not from `TrackStatus` or `triage_actions`. The
+lowercase `starred` here is the operator's playlist and the same one the code's
+`Starred` special-casing (`demoteTrack()`, `RulePlaylistAction`) refers to; do
+not conflate the star rating with the lifecycle `status`.
+
 #### Entry and explicit triage
 
 - `ScanPlaylistsForInbox` checks Discover Weekly and Release Radar. A track with
