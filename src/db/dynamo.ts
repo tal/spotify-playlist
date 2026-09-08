@@ -8,7 +8,6 @@ import {
   PutCommand,
   DeleteCommand,
   ScanCommand,
-  ScanCommandInput,
   QueryCommandInput,
   UpdateCommandInput,
   GetCommandInput,
@@ -34,6 +33,45 @@ export const DYNAMO_WRITE_CHUNK = 25
 
 /** All the status reconciliation sweep reads off a track row. */
 export type TrackStatusRow = Pick<TrackItem, 'id' | 'status'>
+
+/**
+ * Sparse GSI on `track`: HASH `status`, RANGE `id`, KEYS_ONLY projection.
+ * Only rows that carry a `status` attribute exist in it — a few dozen out of
+ * ~16k — so a Query here costs about 1 RCU where the old full-table Scan cost
+ * ~283 and throttled every 6-hourly run at 1 provisioned RCU.
+ */
+export const TRACK_STATUS_INDEX = 'status-id-index'
+
+/**
+ * The statuses the reconciliation sweep treats as "still in the triage flow".
+ * The index is queried once per status; `'removed'` rows are in the index too
+ * but are never read by the sweep.
+ */
+export const LIVE_TRACK_STATUSES = [
+  'inbox',
+  'promoted',
+] as const satisfies readonly TrackStatus[]
+
+/**
+ * Pure builder for one page of the sweep's Query, so the wire shape is pinned
+ * by a test without DynamoDB. `idPrefix` is the `gId('')` user prefix; the
+ * index's RANGE key is the table `id`, so `begins_with` scopes it per user.
+ */
+export function liveStatusQuery(
+  status: TrackStatus,
+  idPrefix: string,
+  ExclusiveStartKey?: QueryCommandInput['ExclusiveStartKey'],
+): QueryCommandInput {
+  return {
+    TableName: 'track',
+    IndexName: TRACK_STATUS_INDEX,
+    KeyConditionExpression: '#status = :status AND begins_with(id, :prefix)',
+    // `status` is a DynamoDB reserved word
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: { ':status': status, ':prefix': idPrefix },
+    ExclusiveStartKey,
+  }
+}
 
 /** Shared by every retried Dynamo call below. */
 function isDynamoThroughputError(error: any): boolean {
@@ -99,7 +137,6 @@ export class Dynamo {
 
   async getRecentActionsOfType(actionType: string, since: number, limit: number = 10) {
     // Use Scan with filter since we can't query by partial partition key
-    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb')
     
     // If actionType is empty, search for all actions for this user
     const prefix = actionType ? `${this.user.id}:${actionType}:` : `${this.user.id}:`
@@ -440,61 +477,48 @@ export class Dynamo {
   /**
    * The rows whose status still claims they are somewhere in the triage flow.
    *
-   * Still a full table scan: the `track` table has no index on status and rows
-   * are never deleted, so cost grows with every track ever seen. Index `status`
-   * before adding callers.
-   *
-   * The filter and projection are worth having anyway — a scan is billed on
-   * pre-filter item size, so they buy payload, unmarshalling and Lambda memory
-   * rather than RCU. `triage_actions` is append-only and by far the fattest
-   * attribute on the row; the sweep reads neither it nor anything else beyond
-   * the two fields below.
+   * Reads the sparse `status-id-index` GSI (see `TRACK_STATUS_INDEX`) instead
+   * of scanning the table. Replaced a Scan on 2026-09-04: the table is never
+   * pruned, so the Scan's RCU cost grew with every track ever seen and, at 1
+   * provisioned RCU, blew the 300-RCU burst bucket on every `frequent-crawling`
+   * run — about one run in four then died in retry backoff against the Lambda
+   * timeout. The index is KEYS_ONLY, which is exactly the two fields returned.
    */
   async tracksWithLiveStatus() {
     const items: TrackStatusRow[] = []
-    let ExclusiveStartKey: ScanCommandInput['ExclusiveStartKey']
 
-    do {
-      const params: ScanCommandInput = {
-        TableName: 'track',
-        FilterExpression:
-          'begins_with(id, :prefix) AND #status IN (:inbox, :promoted)',
-        // `status` is a DynamoDB reserved word
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: {
-          ':prefix': this.gId(''),
-          ':inbox': 'inbox' satisfies TrackStatus,
-          ':promoted': 'promoted' satisfies TrackStatus,
-        },
-        ProjectionExpression: 'id, #status',
-        ExclusiveStartKey,
-      }
+    for (const status of LIVE_TRACK_STATUSES) {
+      let ExclusiveStartKey: QueryCommandInput['ExclusiveStartKey']
 
-      // An unbounded scan on a per-minute path is exactly what trips throughput
-      // limits, and a throttled page here would silently truncate the sweep into
-      // "these rows vanished". Same backoff every other scan in this file uses.
-      const response = await retryWithBackoff(
-        () => AWS.docs.send(new ScanCommand(params)),
-        {
-          maxRetries: 8,
-          initialDelay: 500,
-          maxDelay: 30000,
-          backoffMultiplier: 2,
-          shouldRetry: isDynamoThroughputError,
-          onRetry: (_error, attempt, nextDelay) => {
-            console.log(
-              `⚠️ DynamoDB throughput exceeded scanning tracks (attempt ${attempt}) after ${nextDelay}ms`,
-            )
+      do {
+        const params = liveStatusQuery(status, this.gId(''), ExclusiveStartKey)
+
+        // A throttled page here would silently truncate the sweep into "these
+        // rows vanished". Same backoff every other retried call in this file
+        // uses; it should be near-idle now that the read is a few RCU.
+        const response = await retryWithBackoff(
+          () => AWS.docs.send(new QueryCommand(params)),
+          {
+            maxRetries: 8,
+            initialDelay: 500,
+            maxDelay: 30000,
+            backoffMultiplier: 2,
+            shouldRetry: isDynamoThroughputError,
+            onRetry: (_error, attempt, nextDelay) => {
+              console.log(
+                `⚠️ DynamoDB throughput exceeded querying ${TRACK_STATUS_INDEX} for '${status}' (attempt ${attempt}) after ${nextDelay}ms`,
+              )
+            },
           },
-        },
-      )
+        )
 
-      if (response.Items) items.push(...(response.Items as TrackStatusRow[]))
+        if (response.Items) items.push(...(response.Items as TrackStatusRow[]))
 
-      ExclusiveStartKey = response.LastEvaluatedKey
-    } while (ExclusiveStartKey)
+        ExclusiveStartKey = response.LastEvaluatedKey
+      } while (ExclusiveStartKey)
+    }
 
-    console.log(`[Dynamo] scanned ${items.length} rows with a live status`)
+    console.log(`[Dynamo] queried ${items.length} rows with a live status`)
 
     // Hand back bare Spotify ids, matching getTracks()
     return items.map((item) => ({ ...item, id: this.ungId(item.id) }))

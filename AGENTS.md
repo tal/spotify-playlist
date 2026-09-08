@@ -417,6 +417,24 @@ load-bearing at all.
 
 ## Changelog
 
+### 2026-09-04 - `track` Sparse Status GSI + 5 RCU
+
+- The `ArchiveAction` reconciliation sweep (`Dynamo.tracksWithLiveStatus`) no
+  longer scans `track`. It queries the new sparse GSI **`status-id-index`**
+  (HASH `status`, RANGE `id`, KEYS_ONLY) once per live status. Only rows with a
+  `status` attribute exist in the index, so the read is ~1 RCU instead of ~283
+- Why: the scan throttled **every** 6-hourly run at 1 provisioned RCU
+  (370 RCU needed vs. a 300-RCU burst bucket) and about one run in four died in
+  retry backoff against the 80 s Lambda timeout. Dollar cost was never the
+  problem — everything is inside the free tier
+- Live changes applied with `update-table`: `track` reads 1 → 5 RCU and the
+  GSI created at 1/1. Verified after backfill: 62 `inbox` + 6 `promoted` rows
+  for 1 RCU. `config/dynamo-tables/track.json` now exists and carries both
+- New exports `TRACK_STATUS_INDEX`, `LIVE_TRACK_STATUSES`, `liveStatusQuery`;
+  new `dynamo-live-status.test.ts` (7 tests). 584 pass / 0 fail
+- **Not deployed yet** — the Lambda runs the scan until `publish.rb` ships this
+- See `changelog/2026-09-04_track-status-gsi.md`
+
 ### 2026-08-06 - Close Tier 1 Test-Coverage Gaps
 
 - A two-agent coverage audit read the mock-free suite (210 tests / 13 files) against

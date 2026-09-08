@@ -142,10 +142,57 @@ aws dynamodb create-table \
 ```bash
 aws dynamodb create-table \
   --table-name track \
-  --attribute-definitions AttributeName=id,AttributeType=S \
+  --attribute-definitions \
+    AttributeName=id,AttributeType=S \
+    AttributeName=status,AttributeType=S \
   --key-schema AttributeName=id,KeyType=HASH \
   --billing-mode PROVISIONED \
-  --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
+  --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=1 \
+  --global-secondary-indexes '[{
+    "IndexName": "status-id-index",
+    "KeySchema": [
+      {"AttributeName": "status", "KeyType": "HASH"},
+      {"AttributeName": "id", "KeyType": "RANGE"}
+    ],
+    "Projection": {"ProjectionType": "KEYS_ONLY"},
+    "ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 1}
+  }]'
+```
+
+The same definition lives in `config/dynamo-tables/track.json`.
+
+**`status-id-index` is a sparse GSI** (added 2026-09-04): only rows that carry
+a `status` attribute exist in it, which is a few dozen out of ~16k. The
+`ArchiveAction` reconciliation sweep (`Dynamo.tracksWithLiveStatus`) queries it
+once per live status instead of scanning the table. KEYS_ONLY is deliberate —
+`id` and `status` are the only two fields the sweep reads — and it means listen
+writes (which touch neither key) cost nothing on the index.
+
+**Reads are 5 RCU, not 1** (also 2026-09-04). The old full-table Scan needed
+~283 RCU in a burst against a 300-RCU burst bucket, and the rest of the run
+pushed it to ~370, so every 6-hourly run throttled and about one in four died in
+retry backoff against the 80 s Lambda timeout. The Query fix is what removes the
+scan; the 5 RCU is headroom (a 1,500-RCU bucket) that costs nothing inside the
+25-RCU free tier. Both changes were applied to the live table with
+`update-table`, one call each — DynamoDB allows only one kind of change per call:
+
+```bash
+aws dynamodb update-table --table-name track \
+  --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=1
+
+aws dynamodb update-table --table-name track \
+  --attribute-definitions \
+    AttributeName=id,AttributeType=S \
+    AttributeName=status,AttributeType=S \
+  --global-secondary-index-updates '[{"Create": {
+    "IndexName": "status-id-index",
+    "KeySchema": [
+      {"AttributeName": "status", "KeyType": "HASH"},
+      {"AttributeName": "id", "KeyType": "RANGE"}
+    ],
+    "Projection": {"ProjectionType": "KEYS_ONLY"},
+    "ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 1}
+  }}]'
 ```
 
 ### `action_history`
