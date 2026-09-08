@@ -59,6 +59,23 @@ const MINUTE_MS = 1000 * 60
 const HOUR_MS = MINUTE_MS * 60
 const DAY_MS = HOUR_MS * 24
 
+/**
+ * A track leaves Current when *either* trigger fires — they are alternatives,
+ * not a conjunction:
+ *
+ * - `timeToArchive`  — it has sat in Current this long without being played out
+ * - `playsToArchive` — it has been played from Current this many times, so its
+ *                      rotation is done no matter how recently it arrived
+ *
+ * Both file the track in the same monthly archive. The dev values are the fast
+ * variants, matching why dev's `timeToArchive` is a day rather than a month:
+ * a test run has to be able to reach the boundary.
+ *
+ * `playsToArchive` counts `play_count_current` only, which Spotify increments
+ * solely when the playback context *is* the Current playlist. Playing a track
+ * from Liked Songs, search, an album or contextless autoplay bumps the global
+ * `play_count` and moves it no closer to being archived.
+ */
 export async function settings() {
   if (dev.isDev) {
     return {
@@ -68,6 +85,7 @@ export async function settings() {
       discoverWeekly: 'Discover Weekly',
       starred: 'Starred',
       timeToArchive: 1 * DAY_MS,
+      playsToArchive: 2,
       promoteThrottleMs: 5 * MINUTE_MS,
       archivePlaylistNameFor: buildArchiveNamer('[Test]'),
     }
@@ -78,7 +96,8 @@ export async function settings() {
       releaseRadar: 'Release Radar',
       discoverWeekly: 'Discover Weekly',
       starred: 'Starred',
-      timeToArchive: 30 * DAY_MS,
+      timeToArchive: 45 * DAY_MS,
+      playsToArchive: 5,
       promoteThrottleMs: 5 * HOUR_MS,
       archivePlaylistNameFor: buildArchiveNamer(),
     }

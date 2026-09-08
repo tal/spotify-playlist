@@ -4,7 +4,7 @@ import { MoveTrackMutation } from '../mutations/move-track-mutation'
 import { SetTrackStatusMutation } from '../mutations/set-track-status-mutation'
 import { Settings } from '../settings'
 import { Mutation } from '../mutations/mutation'
-import { DYNAMO_WRITE_CHUNK, TrackStatusRow } from '../db/dynamo'
+import { Dynamo, DYNAMO_WRITE_CHUNK, TrackStatusRow } from '../db/dynamo'
 import { chunkArray } from '../utils/array'
 
 /**
@@ -33,7 +33,68 @@ export function archivePeriod(at: number) {
   return `${date.getFullYear()}-${month}`
 }
 
-export type ArchiveCandidate = { added_at: string; track: TrackForMove }
+/**
+ * `play_count_current` rides along on the candidate because the archive
+ * decision needs it and Spotify carries it nowhere — it is read off the track
+ * row in `gatherCurrent`. Required rather than optional so a gather shell that
+ * forgets to populate it fails to compile, instead of quietly reading 0 and
+ * silently reverting the whole pass to the age rule.
+ *
+ * `track.id` is required for the same reason: an item Spotify could not resolve
+ * has no row to look up and no uri to move, so `gatherCurrent` drops it rather
+ * than letting it reach the planner.
+ */
+export type ArchiveCandidate = {
+  added_at: string
+  track: TrackForMove & { id: string }
+  play_count_current: number
+}
+
+/**
+ * Why a track leaves Current, or that it stays.
+ *
+ * - 'aged-out'   — it has sat in Current longer than `timeToArchive`
+ * - 'played-out' — it has been played from Current at least `playsToArchive`
+ *                  times, so its rotation is done however recently it arrived
+ *
+ * The two are alternatives, and both file the track in exactly the same monthly
+ * archive: the destination is a function of when the track was promoted, never
+ * of what ended its run. This distinction exists to explain a pass in the log,
+ * not to route anything.
+ *
+ * The boundaries are deliberately different shapes. Age is continuous, so it is
+ * a strict `>` and a track sitting at exactly `timeToArchive` stays for now.
+ * Plays are a discrete count of things that already happened, so the Nth play
+ * is the one that triggers: `>=`.
+ *
+ * Two properties of `play_count_current` this rule inherits rather than fixes:
+ * it only counts plays whose Spotify playback context *was* the Current
+ * playlist — a listen from Liked Songs or search moves a track no closer to
+ * archiving — and it is cumulative and never reset, so a track re-promoted into
+ * Current after an archive arrives already over the threshold and leaves again
+ * on the next pass.
+ */
+export type ArchiveVerdict = 'keep' | 'aged-out' | 'played-out'
+
+export function archiveVerdict({
+  now,
+  timeToArchive,
+  playsToArchive,
+  candidate,
+}: {
+  now: number
+  timeToArchive: number
+  playsToArchive: number
+  candidate: ArchiveCandidate
+}): ArchiveVerdict {
+  if (now - new Date(candidate.added_at).getTime() > timeToArchive) {
+    return 'aged-out'
+  }
+
+  if (candidate.play_count_current >= playsToArchive) return 'played-out'
+
+  return 'keep'
+}
 
 /**
  * "Could not read" is kept distinct from "read and found nothing", because the
@@ -63,6 +124,7 @@ export interface ArchiveSnapshot {
   now: number
   changed_at: number
   timeToArchive: number
+  playsToArchive: number
   archiveNamer: Settings['archivePlaylistNameFor']
   current: CurrentEvidence
   inbox: InboxEvidence
@@ -79,22 +141,38 @@ export interface ArchiveSnapshot {
 function archiveBuckets({
   now,
   timeToArchive,
+  playsToArchive,
   tracks,
   archiveNamer,
 }: {
   now: number
   timeToArchive: number
+  playsToArchive: number
   tracks: ArchiveCandidate[]
   archiveNamer: Settings['archivePlaylistNameFor']
 }) {
   const byArchiveName = new Map<string, TrackForMove[]>()
+  const verdicts: Record<Exclude<ArchiveVerdict, 'keep'>, number> = {
+    'aged-out': 0,
+    'played-out': 0,
+  }
 
   for (let track of tracks) {
-    const addedAt = new Date(track.added_at).getTime()
-    if (now - addedAt <= timeToArchive) continue
+    const verdict = archiveVerdict({
+      now,
+      timeToArchive,
+      playsToArchive,
+      candidate: track,
+    })
+
+    if (verdict === 'keep') continue
+
+    verdicts[verdict] += 1
 
     // Bucketed by when the track landed in Current, i.e. the month it was
-    // promoted — not the month the archive pass happens to run.
+    // promoted — not the month the archive pass happens to run, and not by
+    // which of the two triggers ended its run. A played-out track and an aged
+    // -out one promoted in the same month share a destination.
     const targetPlaylistName = archiveNamer(track)
     const bucket = byArchiveName.get(targetPlaylistName)
 
@@ -105,12 +183,13 @@ function archiveBuckets({
     }
   }
 
-  return byArchiveName
+  return { byArchiveName, verdicts }
 }
 
 function archiveAgedTracks({
   now,
   timeToArchive,
+  playsToArchive,
   archiveNamer,
   current,
 }: ArchiveSnapshot): MoveTrackMutation[] {
@@ -127,12 +206,17 @@ function archiveAgedTracks({
     `[ArchiveAction] Processing ${current.tracks.length} tracks from ${current.name} for archiving`,
   )
 
-  const byArchiveName = archiveBuckets({
+  const { byArchiveName, verdicts } = archiveBuckets({
     now,
     timeToArchive,
+    playsToArchive,
     tracks: current.tracks,
     archiveNamer,
   })
+
+  console.log(
+    `[ArchiveAction] ${verdicts['aged-out']} aged out (> ${timeToArchive}ms in ${current.name}), ${verdicts['played-out']} played out (>= ${playsToArchive} plays from ${current.name})`,
+  )
 
   const mutations: MoveTrackMutation[] = []
 
@@ -285,14 +369,18 @@ export class ArchiveAction implements Action {
   }
 
   private async gatherCurrent({
+    dynamo,
     name,
     now,
     timeToArchive,
+    playsToArchive,
     archiveNamer,
   }: {
+    dynamo: Dynamo
     name: string
     now: number
     timeToArchive: number
+    playsToArchive: number
     archiveNamer: Settings['archivePlaylistNameFor']
   }): Promise<CurrentEvidence> {
     // Optional rather than required: the reconciliation below has its own
@@ -301,7 +389,10 @@ export class ArchiveAction implements Action {
 
     if (!currentPlaylist) return { listing: 'unavailable', name }
 
-    const tracks = await this.client.tracksForPlaylist(currentPlaylist)
+    const tracks = await this.archiveCandidates(
+      dynamo,
+      await this.client.tracksForPlaylist(currentPlaylist),
+    )
 
     return {
       listing: 'read',
@@ -309,9 +400,59 @@ export class ArchiveAction implements Action {
       playlist: { id: currentPlaylist.id },
       tracks,
       archivePlaylists: await this.archivePlaylists(
-        archiveBuckets({ now, timeToArchive, tracks, archiveNamer }).keys(),
+        archiveBuckets({
+          now,
+          timeToArchive,
+          playsToArchive,
+          tracks,
+          archiveNamer,
+        }).byArchiveName.keys(),
       ),
     }
+  }
+
+  /**
+   * The play-count trigger reads `play_count_current`, which lives on the track
+   * row and on nothing Spotify returns. `tracksWithLiveStatus` cannot supply it
+   * either — that scan projects `id` and `status` only — so this is a separate
+   * keyed read over exactly the tracks currently in Current.
+   *
+   * An item Spotify could not resolve (`{ track: null }`, region-blocked,
+   * pulled from the catalog) has no id to look a row up by and no uri to move,
+   * so it is dropped here rather than carried into the planner as a candidate
+   * that could never be archived anyway.
+   */
+  private async archiveCandidates(
+    dynamo: Dynamo,
+    items: Awaited<ReturnType<Spotify['tracksForPlaylist']>>,
+  ): Promise<ArchiveCandidate[]> {
+    const resolvable: {
+      added_at: string
+      track: TrackForMove & { id: string }
+    }[] = []
+
+    for (let item of items) {
+      const track = item?.track
+
+      if (!track?.id || !track.uri) continue
+
+      resolvable.push({
+        added_at: item.added_at,
+        track: { uri: track.uri, id: track.id },
+      })
+    }
+
+    const rows = await dynamo.getTracks(
+      resolvable.map((candidate) => candidate.track.id),
+    )
+
+    return resolvable.map(({ added_at, track }) => ({
+      added_at,
+      track,
+      // No row, or a row predating the per-stage counters, means no listen has
+      // ever been attributed to Current — which is 0, not unknown.
+      play_count_current: rows[track.id]?.play_count_current ?? 0,
+    }))
   }
 
   private async archivePlaylists(names: Iterable<string>) {
@@ -373,7 +514,13 @@ export class ArchiveAction implements Action {
     now,
     settings,
   }: PerformContext): Promise<ArchiveSnapshot> {
-    const { inbox, current, timeToArchive, archivePlaylistNameFor } = settings
+    const {
+      inbox,
+      current,
+      timeToArchive,
+      playsToArchive,
+      archivePlaylistNameFor,
+    } = settings
 
     // The two slowest reads of this pass hit different services — a full table
     // scan and a walk of Current — so they overlap. The reconciliation's own
@@ -381,9 +528,11 @@ export class ArchiveAction implements Action {
     // playlist cache that `getOrCreatePlaylist(_, forceRefresh)` resets.
     const [currentEvidence, liveStatusRows] = await Promise.all([
       this.gatherCurrent({
+        dynamo,
         name: current,
         now,
         timeToArchive,
+        playsToArchive,
         archiveNamer: archivePlaylistNameFor,
       }),
       dynamo.tracksWithLiveStatus(),
@@ -398,6 +547,7 @@ export class ArchiveAction implements Action {
       now,
       changed_at: this.created_at,
       timeToArchive,
+      playsToArchive,
       archiveNamer: archivePlaylistNameFor,
       current: currentEvidence,
       inbox: inboxEvidence,

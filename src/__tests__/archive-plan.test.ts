@@ -37,15 +37,26 @@ const DAY = 1000 * 60 * 60 * 24
 const NOW = Date.UTC(2026, 7, 4, 12)
 const CHANGED_AT = NOW - 90_000
 const TIME_TO_ARCHIVE = 30 * DAY
+const PLAYS_TO_ARCHIVE = 5
 const CURRENT: PlaylistID = { id: 'playlist-current' }
 
 const archiveNamer = buildArchiveNamer()
 
-function candidate(id: string, addedAt: number): ArchiveCandidate {
+function candidate(
+  id: string,
+  addedAt: number,
+  play_count_current = 0,
+): ArchiveCandidate {
   return {
     added_at: new Date(addedAt).toISOString(),
     track: { uri: `spotify:track:${id}`, id },
+    play_count_current,
   }
+}
+
+/** Young enough that only the play counter can archive it. */
+function fresh(id: string, play_count_current: number): ArchiveCandidate {
+  return candidate(id, NOW, play_count_current)
 }
 
 /**
@@ -94,6 +105,7 @@ function snapshot(overrides: Partial<ArchiveSnapshot> = {}): ArchiveSnapshot {
     now: NOW,
     changed_at: CHANGED_AT,
     timeToArchive: TIME_TO_ARCHIVE,
+    playsToArchive: PLAYS_TO_ARCHIVE,
     archiveNamer,
     current: currentRead([]),
     inbox: { listing: 'unavailable', name: 'Inbox' },
@@ -203,15 +215,156 @@ describe('archivePlan age boundary', () => {
   })
 
   /**
-   * Documents current behavior, not desired behavior. `new Date(garbage)` is
-   * NaN, `now - NaN <= timeToArchive` is false, and false means "old enough" —
-   * so an unparseable added_at archives on the spot, into a playlist the namer
-   * builds out of two NaNs.
+   * `new Date(garbage)` is NaN and every comparison against NaN is false, so an
+   * unparseable added_at is neither older nor younger than the window. Under the
+   * old `if (now - addedAt <= timeToArchive) continue` that false meant "old
+   * enough" and the track archived on the spot, into a playlist the namer built
+   * out of two NaNs — "NaN - undefined". Stating the rule as `>` inverts which
+   * way NaN falls, and leaving the track in Current is the recoverable answer.
+   *
+   * The play counter is still a real number, so a track with an unreadable date
+   * that has been played out archives on that trigger — see the play-boundary
+   * block below, which pins the destination it lands in.
    */
-  it('treats an unparseable added_at as aged out', () => {
+  it('leaves a track with an unparseable added_at in Current', () => {
     const track: ArchiveCandidate = {
       added_at: 'sometime last spring',
       track: { uri: 'spotify:track:bad-date', id: 'bad-date' },
+      play_count_current: 0,
+    }
+
+    const plan = archivePlan(snapshot({ current: currentRead([track]) }))
+
+    expect(storage(plan)).toEqual([])
+  })
+})
+
+/**
+ * The second trigger. `play_count_current` is a discrete count of plays that
+ * already happened, so the threshold is inclusive — the Nth play is the one
+ * that ends the rotation — where the age rule is exclusive. Both boundaries are
+ * pinned at the millisecond/play either side of the line rather than sampled
+ * from a distance, for the same reason: crossing one moves tracks.
+ *
+ * The pair are alternatives, never a conjunction, and neither changes where a
+ * track lands. A played-out track files under the month it was promoted exactly
+ * as an aged-out one does, which is what "keep the destination the same" means
+ * in tests.
+ */
+describe('archivePlan play-count boundary', () => {
+  it('leaves a fresh track one play short of playsToArchive', () => {
+    const plan = archivePlan(
+      snapshot({
+        current: currentRead([fresh('almost', PLAYS_TO_ARCHIVE - 1)]),
+      }),
+    )
+
+    expect(storage(plan)).toEqual([])
+  })
+
+  it('archives a fresh track that has exactly playsToArchive plays', () => {
+    const track = fresh('played-out', PLAYS_TO_ARCHIVE)
+
+    const plan = archivePlan(snapshot({ current: currentRead([track]) }))
+
+    expect(moves(plan).map((m) => m.data)).toEqual([
+      {
+        tracks: [{ uri: 'spotify:track:played-out', id: 'played-out' }],
+        from: CURRENT,
+        to: { id: `playlist-${archiveNamer(track)}` },
+      },
+    ])
+  })
+
+  it('archives a fresh track past playsToArchive', () => {
+    const plan = archivePlan(
+      snapshot({
+        current: currentRead([fresh('well-past', PLAYS_TO_ARCHIVE + 4)]),
+      }),
+    )
+
+    expect(moves(plan)).toHaveLength(1)
+  })
+
+  it('still archives on age alone when the track has never been played from Current', () => {
+    const track = candidate('aged-unplayed', NOW - TIME_TO_ARCHIVE - 1, 0)
+
+    const plan = archivePlan(snapshot({ current: currentRead([track]) }))
+
+    expect(moves(plan)).toHaveLength(1)
+  })
+
+  it('sends an aged-out and a played-out track promoted in the same month to one playlist', () => {
+    const aged = candidate('aged', Date.UTC(2026, 4, 10, 12), 0)
+    const playedOut = candidate(
+      'played',
+      Date.UTC(2026, 4, 20, 12),
+      PLAYS_TO_ARCHIVE,
+    )
+
+    const plan = archivePlan(
+      snapshot({ current: currentRead([aged, playedOut]) }),
+    )
+
+    expect(moves(plan).map((m) => m.data)).toEqual([
+      {
+        tracks: [
+          { uri: 'spotify:track:aged', id: 'aged' },
+          { uri: 'spotify:track:played', id: 'played' },
+        ],
+        from: CURRENT,
+        to: { id: 'playlist-2026 - May' },
+      },
+    ])
+  })
+
+  it('files a played-out track under the month it was promoted, not the month it played out', () => {
+    const track = candidate(
+      'may-played-out',
+      Date.UTC(2026, 4, 10, 12),
+      PLAYS_TO_ARCHIVE,
+    )
+
+    const plan = archivePlan(snapshot({ current: currentRead([track]) }))
+
+    expect(moves(plan)[0].data.to).toEqual({ id: 'playlist-2026 - May' })
+  })
+
+  it('archives nothing on plays when playsToArchive is above every counter', () => {
+    const plan = archivePlan(
+      snapshot({
+        current: currentRead([fresh('heavy', 40)]),
+        playsToArchive: 41,
+      }),
+    )
+
+    expect(storage(plan)).toEqual([])
+  })
+
+  it('leaves a played-out track in Current when its archive playlist never resolved', () => {
+    const track = fresh('orphan', PLAYS_TO_ARCHIVE)
+
+    const plan = archivePlan(
+      snapshot({ current: currentRead([track], new Map()) }),
+    )
+
+    expect(storage(plan)).toEqual([])
+  })
+})
+
+/**
+ * The unparseable-date track from the age block, but played out. NaN only
+ * decides the age question; the play trigger still fires, and the namer still
+ * has no month to work with — so this is the one path that can still produce a
+ * "NaN - undefined" archive. Pinned so it is a known consequence rather than a
+ * surprise in a live pass.
+ */
+describe('archivePlan play-count with an unreadable added_at', () => {
+  it("archives on plays into the namer's NaN playlist", () => {
+    const track: ArchiveCandidate = {
+      added_at: 'sometime last spring',
+      track: { uri: 'spotify:track:bad-date', id: 'bad-date' },
+      play_count_current: PLAYS_TO_ARCHIVE,
     }
 
     const plan = archivePlan(snapshot({ current: currentRead([track]) }))

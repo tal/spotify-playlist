@@ -53,6 +53,7 @@ function settings(overrides: Partial<Settings> = {}): Settings {
     discoverWeekly: 'Discover Weekly',
     starred: 'Starred',
     timeToArchive: 30 * 24 * 60 * 60 * 1000,
+    playsToArchive: 5,
     promoteThrottleMs: 5 * 60 * 60 * 1000,
     archivePlaylistNameFor: buildArchiveNamer(),
     ...overrides,
@@ -446,10 +447,15 @@ describe('ArchiveAction gather', () => {
         return [track('saved-kept')]
       },
     } as unknown as Spotify
+    const trackReads: string[][] = []
     const dynamo = {
       user: user(),
       async tracksWithLiveStatus() {
         return rows
+      },
+      async getTracks(ids: string[]) {
+        trackReads.push(ids)
+        return { february: { play_count_current: 3 } }
       },
     } as unknown as Dynamo
     const action = new ArchiveAction(client)
@@ -468,6 +474,9 @@ describe('ArchiveAction gather', () => {
       { name: '2026 - February', forceRefresh: false },
     ])
     expect(playlistReads).toEqual(['playlist-current', 'playlist-inbox'])
+    // Counters come off the track rows, keyed to exactly what Current holds —
+    // the status scan projects id and status only and cannot supply them.
+    expect(trackReads).toEqual([['january', 'february']])
     expect(snapshot.changed_at).toBe(99)
     expect(snapshot.liveStatusRows).toBe(rows)
     expect(snapshot.inbox).toEqual({
@@ -482,7 +491,20 @@ describe('ArchiveAction gather', () => {
         '2026 - January',
         '2026 - February',
       ])
+      expect(snapshot.current.tracks).toEqual([
+        {
+          added_at: '2026-01-10T12:00:00.000Z',
+          track: { uri: 'spotify:track:january', id: 'january' },
+          play_count_current: 0,
+        },
+        {
+          added_at: '2026-02-10T12:00:00.000Z',
+          track: { uri: 'spotify:track:february', id: 'february' },
+          play_count_current: 3,
+        },
+      ])
     }
+    expect(snapshot.playsToArchive).toBe(5)
   })
 })
 
