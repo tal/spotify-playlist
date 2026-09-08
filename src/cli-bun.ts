@@ -104,8 +104,16 @@ Add query parameters as needed, for example:
         throw new Error(JSON.stringify(result))
       }
 
-      // Pretty-print read-only reports such as listen-stats and user.
-      console.log(JSON.stringify(JSON.parse(result.body), null, 2))
+      // In a terminal, pretty-print read-only reports such as listen-stats and
+      // user. When piped (e.g. Hammerspoon capturing stdout) emit the body as a
+      // single compact JSON line so its result parser can decode the last line
+      // instead of choking on multi-line pretty output.
+      const parsed = JSON.parse(result.body)
+      console.log(
+        process.stdout.isTTY
+          ? JSON.stringify(parsed, null, 2)
+          : JSON.stringify(parsed),
+      )
     } catch (error) {
       console.error(error)
       exit(1)

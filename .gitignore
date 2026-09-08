@@ -9,3 +9,6 @@ stdout.log
 **.local*
 tsconfig.tsbuildinfo
 build/
+
+# local Hammerspoon promote/demote failure log
+hammerspoon-failures.log

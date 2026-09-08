@@ -328,19 +328,23 @@ export class Spotify {
   async allPlaylists() {
     const client = this.client
 
-    let response = await client.getUserPlaylists({ limit: 50 })
-    let items = response.body.items
+    // Page 1 tells us `total`, so every remaining page can be fetched at once
+    // instead of walking `next` one blocking round-trip at a time. With 264
+    // playlists the old sequential loop was 6 back-to-back fetches (~3.2s) just
+    // to resolve Inbox/Current/Starred by name on every promote/demote.
+    const first = await client.getUserPlaylists({ limit: 50 })
+    const { total, limit, items } = first.body
 
-    while (response.body.next) {
-      response = await client.getUserPlaylists({
-        limit: response.body.limit,
-        offset: response.body.limit + response.body.offset,
-      })
-
-      items = [...items, ...response.body.items]
+    const offsets: number[] = []
+    for (let offset = limit; offset < total; offset += limit) {
+      offsets.push(offset)
     }
 
-    return items
+    const rest = await Promise.all(
+      offsets.map((offset) => client.getUserPlaylists({ limit, offset })),
+    )
+
+    return rest.reduce((all, page) => all.concat(page.body.items), items)
   }
 
   async optionalPlaylist(named: string) {
@@ -429,28 +433,38 @@ export class Spotify {
     }
 
     if (!id) throw 'must provide id or name'
+    const playlistId = id
 
-    if (id in this._tracks) {
-      console.log(`👯‍♀️ Cached read of playlist ${name ?? id}`)
-      return this._tracks[id]
+    if (playlistId in this._tracks) {
+      console.log(`👯‍♀️ Cached read of playlist ${name ?? playlistId}`)
+      return this._tracks[playlistId]
     }
 
     const client = this.client
 
-    let response = await client.getPlaylistTracks(id, { limit: 100 })
-    let items = response.body.items
+    // Same parallel-paging trick as allPlaylists: read page 1 for `total`, then
+    // fan the rest out concurrently instead of chasing `next` sequentially.
+    const first = await client.getPlaylistTracks(playlistId, { limit: 100 })
+    const { total, limit } = first.body
 
-    while (response.body.next) {
-      response = await client.getPlaylistTracks(id, {
-        limit: response.body.limit,
-        offset: response.body.limit + response.body.offset,
-      })
-
-      items = [...items, ...response.body.items]
+    const offsets: number[] = []
+    for (let offset = limit; offset < total; offset += limit) {
+      offsets.push(offset)
     }
 
-    console.log(`📥 Writing cache of playlist ${name ?? id}`)
-    this._tracks[id] = items
+    const rest = await Promise.all(
+      offsets.map((offset) =>
+        client.getPlaylistTracks(playlistId, { limit, offset }),
+      ),
+    )
+
+    const items = rest.reduce(
+      (all, page) => all.concat(page.body.items),
+      first.body.items,
+    )
+
+    console.log(`📥 Writing cache of playlist ${name ?? playlistId}`)
+    this._tracks[playlistId] = items
 
     return items
   }
