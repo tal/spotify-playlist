@@ -1,0 +1,27 @@
+{
+  "name": "Spotify Green",
+  "project": "spotify-playlist",
+  "source": "Spotify brand green (#1ED760) accent on a deep forest-green background; WCAG-checked with references/contrast.py",
+  "variants": {
+    "day":   { "background": "#0d2618", "foreground": "#eafff2", "cursor": "#1ed760" },
+    "night": { "background": "#0a1f13", "foreground": "#e8ffef", "cursor": "#1ed760" }
+  },
+  "palette": [
+    "#0a1f13", "#ff5c5c", "#1ed760", "#f5d76e",
+    "#4aa3ff", "#b57edc", "#1fd8c4", "#e8ffef",
+    "#6f9e82", "#ff7a7a", "#57e08a", "#ffe08a",
+    "#7bbcff", "#cf9bef", "#5ff0dd", "#ffffff"
+  ],
+  "claudeCode": {
+    "slug": "spotify-playlist-night",
+    "base": "dark",
+    "inactive": "#7fae92",
+    "statusName": "#1ed760",
+    "overrides": {
+      "claude": "#1ed760",
+      "inactive": "#7fae92",
+      "promptBorder": "#1ed760",
+      "promptBorderShimmer": "#6ff29a"
+    }
+  }
+}
