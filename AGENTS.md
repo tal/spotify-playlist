@@ -4,7 +4,7 @@ This file provides guidance to coding agents working in this repository.
 
 ## Overview
 
-This is a Spotify playlist management automation system that runs as an AWS Lambda function. It manages Inbox/Current playlists, archives tracks by month, processes playback history, and supports explicit promote/demote decisions. Per-stage listening data is being collected for future automatic transitions, but does not drive them yet.
+This is a Spotify playlist management automation system that runs as an AWS Lambda function. It manages Inbox/Current playlists, archives tracks by month, processes playback history, and supports explicit promote/demote decisions. Current archiving uses per-stage play counts or elapsed time; automatic Inbox removal remains a future transition.
 
 ## Common Development Commands
 
@@ -309,14 +309,15 @@ not conflate the star rating with the lifecycle `status`.
 - A track repeatedly played from **Current** has completed its active rotation.
   After it has been listened to enough in Current, the workflow should support
   Current → Archived automatically.
-- "Listened to enough" is deliberately unspecified for now. Do not invent a
-  threshold in code or documentation; use accumulated `listen-stats` data when
-  making that product decision.
+- The Current archive threshold is now 5 Current-context plays in production,
+  as configured in `settings.ts` and deployed on 2026-09-16. The automatic Inbox
+  removal threshold remains unspecified; do not invent it.
 - It is also still TBD whether Inbox → Removed applies only to unliked tracks
   or can remove a track that was manually saved while still in Inbox.
-- Current production behavior remains time-based: `ArchiveAction` moves a track
-  after 30 days in Current, based on the Current playlist item's `added_at`.
-  `play_count_current` is collected and reported but does not gate archiving yet.
+- Current production behavior (deployed 2026-09-16): `ArchiveAction` moves a
+  track after more than 45 days in Current OR at least 5 Current-context plays.
+  Age uses the Current playlist item's `added_at`; the destination month is
+  still based on that date. Development uses 1 day OR 2 Current-context plays.
 - Manual-triage backfills use `increment_by: 0`. Playlist placement is evidence
   of a lifecycle transition, never evidence that a listen happened; no manual
   move may synthesize, transfer, or reset play counts.
