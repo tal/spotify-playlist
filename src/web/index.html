@@ -227,6 +227,19 @@
       .heart.liked {
         color: #1ed760;
       }
+      .stage {
+        color: #f0f5f1;
+      }
+      .arrow {
+        color: #70dc95;
+        margin: 0 5px;
+      }
+      .row.undone {
+        opacity: 0.5;
+      }
+      .row.undone .song a {
+        text-decoration: line-through;
+      }
       .bar {
         height: 4px;
         border-radius: 9px;
@@ -364,6 +377,20 @@
         </p>
         <div class="list" id="inbox" aria-live="polite">
           <p class="message">Waiting for Current to load…</p>
+        </div>
+      </details>
+      <details class="panel" open>
+        <summary class="section-head">
+          <h2 id="promotes-title">Recently promoted</h2>
+          <span class="tag">Latest 20 promotes</span>
+          <span class="chev" aria-hidden="true">▾</span>
+        </summary>
+        <p class="description">
+          Where each track sat and whether it was saved, just before the promote
+          and measured right after. “Now” is where it lives today.
+        </p>
+        <div class="list" id="promotes" aria-live="polite">
+          <p class="message">Waiting for Inbox to load…</p>
         </div>
       </details>
       <details class="panel" open>

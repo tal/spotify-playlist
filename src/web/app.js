@@ -102,6 +102,56 @@ function renderInbox(target, tracks) {
     fragment.append(element('p', 'message', 'Your Inbox is empty.'))
   $(target).replaceChildren(fragment)
 }
+const stageLabel = (stage) =>
+  stage ? stage[0].toUpperCase() + stage.slice(1) : '—'
+function transition(before, after, key) {
+  // "unheard → current" style, degrading to "—" on either missing side.
+  const span = element('span')
+  span.append(element('span', 'stage', before ? before[key] ?? '' : '—'))
+  span.append(element('span', 'arrow', '→'))
+  span.append(element('span', 'stage', after ? after[key] ?? '' : '—'))
+  return span
+}
+function renderPromotes(target, tracks) {
+  const fragment = document.createDocumentFragment()
+  for (const [index, track] of tracks.entries()) {
+    const row = element('div', track.state === 'undone' ? 'row undone' : 'row')
+    row.append(element('span', 'number', String(index + 1).padStart(2, '0')))
+    const song = element('div', 'song')
+    const link = element('a', '', track.name)
+    link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    song.append(link, element('div', 'artist', track.artist))
+    // Where it sat → where it landed, plus the saved change underneath.
+    const move = element('div', 'metric')
+    const stages = transition(
+      { current: stageLabel(track.before && track.before.stage) },
+      { current: stageLabel(track.after && track.after.stage) },
+      'current',
+    )
+    const savedChange = element('small')
+    savedChange.append(
+      transition(track.before, track.after, 'saved'),
+      track.state === 'undone' ? ' · undone' : '',
+    )
+    move.append(stages, savedChange)
+    // When it was promoted, and where the track lives now.
+    const when = element('div', 'metric secondary', date(track.promotedAt))
+    when.append(
+      element(
+        'small',
+        '',
+        `now: ${track.liveStatus ?? 'unknown'} · ${track.playsFromCurrent} ${track.playsFromCurrent === 1 ? 'play' : 'plays'}`,
+      ),
+    )
+    row.append(song, move, when)
+    fragment.append(row)
+  }
+  if (!tracks.length)
+    fragment.append(element('p', 'message', 'No promotes recorded yet.'))
+  $(target).replaceChildren(fragment)
+}
 function showError(target, error) {
   $(target).replaceChildren(
     element(
@@ -136,6 +186,15 @@ async function refresh() {
     renderInbox('inbox', inbox.tracks)
   } catch (error) {
     showError('inbox', error)
+  }
+  $('promotes').replaceChildren(
+    element('p', 'message', 'Loading recent promotes…'),
+  )
+  try {
+    const promotes = await load('/api/promotes')
+    renderPromotes('promotes', promotes.tracks)
+  } catch (error) {
+    showError('promotes', error)
   }
   $('archived').replaceChildren(
     element(

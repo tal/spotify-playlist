@@ -33,7 +33,9 @@ bun run src/lambda-bun.ts
 ### Read-only Hono dashboard
 
 `src/web/` serves a dark dashboard at `/`, JavaScript at `/app.js`, and JSON
-at `/api/current` and `/api/archived?limit=20` (integer limits 1–20).
+at `/api/current`, `/api/inbox`, `/api/promotes`, and `/api/archived?limit=20`
+(integer limits 1–20). All four page sections are `<details class="panel" open>`
+— collapsible, start open, native (no JS).
 The archive feed includes automatic and manual additions still present in
 monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
 one row per addition. Repeated tracks are intentional. It reads every matching
@@ -51,10 +53,35 @@ than renumbering from 1. `gatherInbox` reuses
 records + saved status for exactly those (one `containsMySavedTracks` call,
 under the 50-id cap) and re-plan. No cache — Inbox is fetched fresh like Current.
 
+The `/api/promotes` feed (`src/web/promotes.ts`) lists the 20 most recent
+**promote actions** with a before/after snapshot of each track's lifecycle
+`stage` (`'unheard' | 'liked' | 'current' | 'removed'`) + `saved`
+(`'saved' | 'unsaved'`) status, plus its live `status`/play counts today. The
+snapshot is captured in `MagicPromoteAction`: `perform()` stashes the `before`
+membership from the gather it already runs, and `forStorage()` (post-mutation)
+re-reads a *measured* `after` via `readTriageMembership()` (which drops the
+Inbox/Current entries from the client's `_tracks` cache first; Spotify is
+eventually consistent, so it can lag). A failed after-read is swallowed and
+leaves `before`/`after` absent — it never blocks the history write. Because the
+capture lives in `perform`/`forStorage`, only a **non-throttled** promote (one
+that passed `performAction`'s throttle check) records anything. Row fields:
+`PromoteLocationSnapshotData`, `before?`/`after?` on
+`PromoteActionHistoryItemData` (`src/db/action-history.d.ts`). The feed is
+**forward-only** — promotes made before this shipped are not in it.
+
+The promotes feed's source is a capped (`RECENT_PROMOTES_CAP = 50`) newest-first
+`recentPromotesV1` list on the user row, maintained by `putActionHistory`
+whenever it writes a `'promote-track'` row (best-effort; demote/undo skipped).
+`gatherPromotes` reads that list (one projected `GetItem`), `BatchGet`s exactly
+those `action_history` rows, and joins the ids against `track`. **Never** source
+this from `getRecentActionsOfType` — that is a filtered Scan on the ~96 MB /
+1-RCU `action_history` table and cannot even reliably return the newest rows.
+No GSI was created; the list is the source. Fresh every load, no cache.
+
 `shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
 requests with any `action` query key, existing action paths, and scheduled
 invocations retain the legacy handler. Attached AWS event fields are authoritative.
-The UI reads the two APIs sequentially and retries each once; concurrency remains 1.
+The UI reads the four APIs sequentially and retries each once; concurrency remains 1.
 Archive responses are cached for 12 hours in the user's `archiveDashboardCacheV1`
 DynamoDB attribute (development uses `archiveDashboardTestCacheV1`). A cache hit
 uses exactly one projected GetItem, with no Spotify/token bootstrap. After expiry,

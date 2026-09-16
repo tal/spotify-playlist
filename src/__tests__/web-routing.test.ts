@@ -14,6 +14,7 @@ test('gate accepts only the intended local GET routes', () => {
     '/app.js',
     '/api/current',
     '/api/inbox',
+    '/api/promotes',
     '/api/archived',
     '/api/missing',
   ])
@@ -68,6 +69,7 @@ const current = {
 }
 const inbox = { tracks: [], trackCount: 0, likedCount: 0, generatedAt: 'now' }
 const archived = { tracks: [], trackCount: 0, generatedAt: 'now' }
+const promotes = { tracks: [], trackCount: 0, generatedAt: 'now' }
 
 test('Hono serves assets and APIs, validates limits, and never falls through', async () => {
   const limits: number[] = []
@@ -78,9 +80,11 @@ test('Hono serves assets and APIs, validates limits, and never falls through', a
       limits.push(limit)
       return archived
     },
+    promotes: async () => promotes,
   })
   expect(await (await app.request('/api/current')).json()).toEqual(current)
   expect(await (await app.request('/api/inbox')).json()).toEqual(inbox)
+  expect(await (await app.request('/api/promotes')).json()).toEqual(promotes)
   expect(await (await app.request('/api/archived')).json()).toEqual(archived)
   await app.request('/api/archived?limit=3')
   expect(limits).toEqual([20, 3])
@@ -89,7 +93,9 @@ test('Hono serves assets and APIs, validates limits, and never falls through', a
   expect((await app.request('/api/missing')).status).toBe(404)
   const html = await app.request('/')
   expect(html.headers.get('content-type')).toContain('text/html')
-  expect(await html.text()).toContain('Recently archived')
+  const page = await html.text()
+  expect(page).toContain('Recently archived')
+  expect(page).toContain('Recently promoted')
   const js = await app.request('/app.js')
   expect(js.headers.get('content-type')).toContain('text/javascript')
   expect(js.headers.get('cache-control')).toBe('no-store')
@@ -106,6 +112,7 @@ test('loader errors return JSON with the shared normalization', async () => {
     archived: async () => {
       throw 'cannot find playlist'
     },
+    promotes: async () => promotes,
   })
   const failure = await app.request('/api/current')
   expect(failure.status).toBe(500)

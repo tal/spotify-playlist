@@ -10,6 +10,7 @@ import { koalemosContext } from './web/context'
 import { currentPlan, gatherCurrent } from './web/current'
 import { gatherInbox } from './web/inbox'
 import { gatherArchived } from './web/archived'
+import { gatherPromotes } from './web/promotes'
 import { cachedArchiveLoader } from './web/archive-cache'
 import { dynamoArchiveCacheStore } from './db/archive-cache'
 
@@ -23,6 +24,9 @@ const web = buildWebApp({
     currentPlan(await gatherCurrent(await koalemosContext())),
   inbox: async () => gatherInbox(await koalemosContext(), 20),
   archived,
+  // Fresh every load: the source is a tiny capped list on the user row, not the
+  // archive's many-playlist crawl, so there is nothing worth caching.
+  promotes: async () => gatherPromotes(await koalemosContext(), 20),
 })
 
 /** Use the original event for HTTP identity, path and action query presence. */

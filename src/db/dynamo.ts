@@ -31,6 +31,29 @@ const BATCH_GET_RETRY_BASE_MS = 50
  */
 export const DYNAMO_WRITE_CHUNK = 25
 
+/**
+ * How many promote pointers the user row keeps. The promotes feed shows 20; the
+ * surplus is headroom so undone/deleted rows dropping out of the feed still
+ * leave 20 real ones. Small and bounded — the whole point of not Scanning.
+ */
+export const RECENT_PROMOTES_CAP = 50
+
+/**
+ * Prepend a promote pointer to the newest-first list and trim to the cap. Pure
+ * so the cap/order/dedupe behaviour is pinned by a test without DynamoDB. A
+ * repeat of the same (id, created_at) is collapsed to one, newest position.
+ */
+export function nextRecentPromotes(
+  existing: RecentPromoteRef[] | undefined,
+  ref: RecentPromoteRef,
+  cap: number = RECENT_PROMOTES_CAP,
+): RecentPromoteRef[] {
+  const withoutDupe = (existing ?? []).filter(
+    (e) => !(e.id === ref.id && e.created_at === ref.created_at),
+  )
+  return [ref, ...withoutDupe].slice(0, cap)
+}
+
 /** All the status reconciliation sweep reads off a track row. */
 export type TrackStatusRow = Pick<TrackItem, 'id' | 'status'>
 
@@ -618,18 +641,119 @@ export class Dynamo {
   }
 
   async putActionHistory(history: ActionHistoryItemData) {
+    const id = this.gId(history.id)
     const params: PutCommandInput = {
       TableName: 'action_history',
-      Item: { 
-        ...history, 
-        id: this.gId(history.id),
+      Item: {
+        ...history,
+        id,
         userId: this.user.id // Add userId for GSI queries
       },
     }
 
     await AWS.docs.send(new PutCommand(params))
 
+    // Keep the promotes feed's source current without a Scan or GSI: every
+    // recorded promote prepends its pointer to a capped list on the user row.
+    // Only promotes go in the feed, so demote/undo rows are skipped. Best-effort
+    // — a failure here must not undo a promote that already happened.
+    if (history.action === 'promote-track') {
+      try {
+        await this.recordRecentPromote({ id, created_at: history.created_at })
+      } catch (error) {
+        console.error('⚠️ recordRecentPromote failed', error)
+      }
+    }
+
     return history
+  }
+
+  /** Prepend one promote pointer to the user row's capped newest-first list. */
+  private async recordRecentPromote(ref: RecentPromoteRef) {
+    const current = await AWS.docs.send(
+      new GetCommand({
+        TableName: 'user',
+        Key: { id: this.user.id },
+        ProjectionExpression: 'recentPromotesV1',
+      }),
+    )
+    const next = nextRecentPromotes(
+      current.Item?.recentPromotesV1 as RecentPromoteRef[] | undefined,
+      ref,
+    )
+    await AWS.docs.send(
+      new UpdateCommand({
+        TableName: 'user',
+        Key: { id: this.user.id },
+        UpdateExpression: 'SET recentPromotesV1 = :list',
+        // Never resurrect a user removed mid-run into a partial row.
+        ConditionExpression: 'attribute_exists(id)',
+        ExpressionAttributeValues: { ':list': next },
+      }),
+    )
+  }
+
+  /** The newest-first promote pointers off the user row, capped to `limit`. */
+  async getRecentPromoteRefs(limit: number): Promise<RecentPromoteRef[]> {
+    const resp = await AWS.docs.send(
+      new GetCommand({
+        TableName: 'user',
+        Key: { id: this.user.id },
+        ProjectionExpression: 'recentPromotesV1',
+        ConsistentRead: true,
+      }),
+    )
+    const refs = (resp.Item?.recentPromotesV1 as RecentPromoteRef[]) ?? []
+    return refs.slice(0, limit)
+  }
+
+  /**
+   * BatchGet the given `action_history` rows by their (id, created_at) keys.
+   * `id` is already the stored `gId` key. Order is not preserved by BatchGet;
+   * the caller re-orders against the ref list. Retries unprocessed keys so a
+   * throttle is not silently read as a missing (deleted/undone) row.
+   */
+  async getActionHistoryByRefs(
+    refs: RecentPromoteRef[],
+  ): Promise<PromoteActionHistoryItemData[]> {
+    if (!refs.length) return []
+
+    const found: PromoteActionHistoryItemData[] = []
+
+    for (let batch of chunkArray(refs, 100)) {
+      let Keys = batch.map((r) => ({ id: r.id, created_at: r.created_at }))
+      let attempt = 0
+
+      while (Keys.length) {
+        const response = await AWS.docs.send(
+          new BatchGetCommand({
+            RequestItems: { action_history: { Keys } },
+          }),
+        )
+
+        if (response.Responses) {
+          found.push(
+            ...(response.Responses
+              .action_history as PromoteActionHistoryItemData[]),
+          )
+        }
+
+        Keys = (response.UnprocessedKeys?.action_history?.Keys ?? []) as {
+          id: string
+          created_at: number
+        }[]
+
+        if (!Keys.length) break
+
+        attempt += 1
+        if (attempt > BATCH_GET_MAX_RETRIES) {
+          throw `getActionHistoryByRefs left ${Keys.length} keys unread after ${BATCH_GET_MAX_RETRIES} retries`
+        }
+        await delay(BATCH_GET_RETRY_BASE_MS * 2 ** (attempt - 1))
+      }
+    }
+
+    return found
   }
 
   async putUser(user: UserData) {

@@ -4,11 +4,13 @@ import { normalizeActionError } from '../action-error'
 import type { currentPlan } from './current'
 import type { archivedPlan } from './archived'
 import type { inboxPlan } from './inbox'
+import type { promotesPlan } from './promotes'
 
 type Loaders = {
   current: () => Promise<ReturnType<typeof currentPlan>>
   inbox: () => Promise<ReturnType<typeof inboxPlan>>
   archived: (limit: number) => Promise<ReturnType<typeof archivedPlan>>
+  promotes: () => Promise<ReturnType<typeof promotesPlan>>
 }
 
 const assets = new Map<string, Promise<string>>()
@@ -51,6 +53,7 @@ export function buildWebApp(loaders: Loaders) {
   )
   app.get('/api/current', async (c) => c.json(await loaders.current()))
   app.get('/api/inbox', async (c) => c.json(await loaders.inbox()))
+  app.get('/api/promotes', async (c) => c.json(await loaders.promotes()))
   app.get('/api/archived', async (c) => {
     const raw = c.req.query('limit') ?? '20'
     if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 20) {
