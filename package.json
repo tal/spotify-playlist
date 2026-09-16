@@ -23,6 +23,7 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1102.0",
     "@aws-sdk/lib-dynamodb": "^3.1102.0",
+    "hono": "^4.13.8",
     "spotify-web-api-node": "^5.0.2"
   }
 }

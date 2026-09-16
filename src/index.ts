@@ -1,4 +1,8 @@
 require('./-run-this-first')
+import { normalizeActionError } from './action-error'
+export { normalizeActionError } from './action-error'
+export type { NormalizedActionError } from './action-error'
+import { gatherCurrent, listenStatsPlan } from './web/current'
 import { Spotify } from './spotify'
 import type { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda'
 import { MagicPromoteAction } from './actions/magic-promote-action'
@@ -167,9 +171,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     case 'undo':
       const actionId = ev.queryStringParameters?.['action-id']
       const actionType = ev.queryStringParameters?.['action-type'] as
-        | 'promote'
-        | 'demote'
-        | undefined
+        'promote' | 'demote' | undefined
       actions = new UndoAction(spotify, dynamo, { actionId, actionType })
       break
     case 'undo-last':
@@ -264,50 +266,15 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         }),
       }
     case 'listen-stats': {
-      // Read-only view of the listen counters, for picking an archive
-      // threshold once enough plays have accrued.
-      const { current, timeToArchive } = await settings()
-      const currentPlaylist = await spotify.playlist(current)
-      const playlistTracks = await spotify.tracksForPlaylist(currentPlaylist)
-      const records = await dynamo.getTracks(
-        playlistTracks.map((t) => t.track.id),
-      )
-      const now = new Date().getTime()
-
-      const tracks = playlistTracks
-        .map((t) => {
-          const record = records[t.track.id]
-
-          return {
-            name: t.track.name,
-            artist: t.track.artists.map((a) => a.name).join(', '),
-            daysInCurrent: Math.floor(
-              (now - new Date(t.added_at).getTime()) / days,
-            ),
-            // null is "unknown" — predates the field or never triaged
-            status: record?.status ?? null,
-            plays: record?.play_count ?? 0,
-            playsFromInbox: record?.play_count_inbox ?? 0,
-            playsFromCurrent: record?.play_count_current ?? 0,
-          }
-        })
-        .sort((a, b) => a.playsFromCurrent - b.playsFromCurrent)
-
+      const snapshot = await gatherCurrent({
+        client: spotify,
+        dynamo,
+        settings: await settings(),
+        now: Date.now(),
+      })
       return {
         statusCode: 200,
-        body: JSON.stringify(
-          {
-            playlist: currentPlaylist.name,
-            trackCount: tracks.length,
-            archivesAfterDays: Math.floor(timeToArchive / days),
-            neverPlayedFromCurrent: tracks.filter(
-              (t) => t.playsFromCurrent === 0,
-            ).length,
-            tracks,
-          },
-          null,
-          2,
-        ),
+        body: JSON.stringify(listenStatsPlan(snapshot), null, 2),
       }
     }
     case 'clear-liked-cache':
@@ -348,36 +315,6 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
       }),
     }
   }
-}
-
-export type NormalizedActionError = {
-  statusCode: number
-  errorMessage: string
-}
-
-export function normalizeActionError(err: unknown): NormalizedActionError {
-  if (typeof err === 'string') {
-    // Business logic errors (like "cannot promote if confirmed") should be 400
-    return {
-      statusCode:
-        err.includes('cannot') ||
-        err.includes('no track') ||
-        err.includes('not found')
-          ? 400
-          : 500,
-      errorMessage: err,
-    }
-  }
-
-  if (err instanceof Error) {
-    return { statusCode: 500, errorMessage: err.message }
-  }
-
-  if (err && typeof err === 'object') {
-    return { statusCode: 500, errorMessage: JSON.stringify(err) }
-  }
-
-  return { statusCode: 500, errorMessage: 'Unknown error occurred' }
 }
 
 export function actionNameFromEvent(ev: APIGatewayProxyEvent) {

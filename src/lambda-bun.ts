@@ -5,6 +5,59 @@ import type {
   Context,
 } from 'aws-lambda'
 import { handler } from './index'
+import { buildWebApp } from './web/app'
+import { koalemosContext } from './web/context'
+import { currentPlan, gatherCurrent } from './web/current'
+import { gatherArchived } from './web/archived'
+import { cachedArchiveLoader } from './web/archive-cache'
+import { dynamoArchiveCacheStore } from './db/archive-cache'
+
+const archived = cachedArchiveLoader(
+  async () => gatherArchived(await koalemosContext(), 20),
+  dynamoArchiveCacheStore('koalemos', dev.isDev ? 'development' : 'production'),
+)
+
+const web = buildWebApp({
+  current: async () =>
+    currentPlan(await gatherCurrent(await koalemosContext())),
+  archived,
+})
+
+/** Use the original event for HTTP identity, path and action query presence. */
+export function shouldRouteToWeb(request: Request): boolean {
+  const attached = (request as any).aws
+  const event =
+    attached === undefined ? undefined : (unwrapEvent(attached) as any)
+  if (event !== undefined && !event?.requestContext?.http && !event?.httpMethod)
+    return false
+  const method =
+    event?.requestContext?.http?.method ?? event?.httpMethod ?? request.method
+  if (method !== 'GET') return false
+  const url = new URL(request.url)
+  const path = event?.rawPath ?? event?.path ?? url.pathname
+  const hasAction =
+    event === undefined
+      ? url.searchParams.has('action')
+      : Object.prototype.hasOwnProperty.call(
+          event.queryStringParameters ?? {},
+          'action',
+        )
+  return (
+    path === '/app.js' ||
+    path.startsWith('/api/') ||
+    (path === '/' && !hasAction)
+  )
+}
+
+function webRequest(request: Request): Request {
+  const attached = (request as any).aws
+  if (attached === undefined) return request
+  const event = unwrapEvent(attached) as any
+  const url = new URL(request.url)
+  url.pathname = event.rawPath ?? event.path ?? url.pathname
+  url.search = new URLSearchParams(event.queryStringParameters ?? {}).toString()
+  return new Request(url, { method: 'GET', headers: request.headers })
+}
 
 /**
  * Adapter between the Bun custom-runtime layer and the existing Lambda handler.
@@ -156,7 +209,11 @@ function responseFor(result: APIGatewayProxyResult | void): Response {
 }
 
 export default {
+  // Local Bun server only; archive reads can exceed Bun's 10-second idle default.
+  idleTimeout: 90,
   async fetch(request: Request): Promise<Response> {
+    if (shouldRouteToWeb(request)) return web.fetch(webRequest(request))
+
     const { origin, event } = await eventFor(request)
 
     if (origin === 'local-server') {

@@ -30,6 +30,33 @@ bun run reauth
 bun run src/lambda-bun.ts
 ```
 
+### Read-only Hono dashboard
+
+`src/web/` serves a dark dashboard at `/`, JavaScript at `/app.js`, and JSON
+at `/api/current` and `/api/archived?limit=20` (integer limits 1–20).
+The archive feed includes automatic and manual additions still present in
+monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
+one row per addition. Repeated tracks are intentional. It reads every matching
+archive because an older month can receive a new manual addition. It does not
+use an action-history Scan or require a new GSI.
+
+`shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
+requests with any `action` query key, existing action paths, and scheduled
+invocations retain the legacy handler. Attached AWS event fields are authoritative.
+The UI reads the two APIs sequentially and retries each once; concurrency remains 1.
+Archive responses are cached for 12 hours in the user's `archiveDashboardCacheV1`
+DynamoDB attribute (development uses `archiveDashboardTestCacheV1`). A cache hit
+uses exactly one projected GetItem, with no Spotify/token bootstrap. After expiry,
+the next request rebuilds all 20 entries and updates only that cache attribute.
+The original `generatedAt` remains visible; Current is fetched fresh every time.
+No timer or scheduled cache rebuild is added. Failures are not cached.
+The Function URL remains unauthenticated, as specified by the plan.
+
+`listen-stats` shares the Current gather/planner but preserves its original JSON
+fields. Null/unresolvable Spotify tracks are omitted. Page loaders are injected
+for Hono tests. HTML/JS are lazily read with `Bun.file`; no frontend build is needed.
+The local Bun server has a 90-second idle timeout to allow the archive read.
+
 ### Local-only tool: `scripts/spotify-folders/`
 
 Moves root-level `YYYY - MonthName` archive playlists into a `History` folder.

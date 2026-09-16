@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101412" />
+    <title>In rotation</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231ed760'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23101412'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #101412;
+        color: #f2f5f3;
+        font-synthesis: none;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(
+          ellipse at 85% 0,
+          #203e2b88,
+          transparent 45%
+        );
+        min-height: 100vh;
+      }
+      main {
+        max-width: 1120px;
+        margin: auto;
+        padding: 52px 32px 70px;
+      }
+      .brand {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.17em;
+        text-transform: uppercase;
+        color: #a1b0a6;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .disc {
+        width: 24px;
+        height: 24px;
+        border: 7px solid #1ed760;
+        border-radius: 50%;
+      }
+      .hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+        margin: 32px 0;
+      }
+      h1 {
+        font-size: clamp(38px, 6vw, 64px);
+        letter-spacing: -0.05em;
+        line-height: 1.1;
+        margin: 0 0 14px;
+      }
+      p {
+        color: #a1b0a6;
+        line-height: 1.6;
+        margin: 0;
+      }
+      button {
+        border: 1px solid #3c4b41;
+        border-radius: 999px;
+        background: #24362a;
+        color: #f2f5f3;
+        padding: 12px 22px;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #304837;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid #1ed760;
+        outline-offset: 5px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin: 30px 0 46px;
+      }
+      .stat {
+        border: 1px solid #2a352e;
+        border-radius: 14px;
+        padding: 23px;
+        background: #17211bb3;
+      }
+      .stat strong {
+        display: block;
+        font-size: 32px;
+        letter-spacing: -0.03em;
+        margin: 8px 0 4px;
+      }
+      .label {
+        color: #a1b0a6;
+        font-size: 12px;
+      }
+      .stat small {
+        color: #91a098;
+        font-size: 12px;
+      }
+      section {
+        margin-top: 36px;
+      }
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 7px;
+      }
+      h2 {
+        font-size: 24px;
+        letter-spacing: -0.025em;
+        margin: 0;
+      }
+      .tag {
+        color: #70dc95;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .description {
+        font-size: 13px;
+        margin-bottom: 20px;
+      }
+      .list {
+        border: 1px solid #2a352e;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #151c17aa;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) 155px 130px;
+        align-items: center;
+        gap: 16px;
+        padding: 17px 22px;
+        border-top: 1px solid #28322b;
+      }
+      .row:first-child {
+        border-top: 0;
+      }
+      .number {
+        font-size: 12px;
+        color: #76877b;
+      }
+      .song {
+        min-width: 0;
+      }
+      .song a {
+        color: #f0f5f1;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .song a:hover {
+        color: #1ed760;
+      }
+      .artist {
+        font-size: 12px;
+        color: #a1b0a6;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+      }
+      .metric {
+        text-align: right;
+        font-size: 14px;
+      }
+      .metric small {
+        display: block;
+        color: #91a098;
+        font-size: 11px;
+        margin-top: 5px;
+      }
+      .bar {
+        height: 4px;
+        border-radius: 9px;
+        background: #2c3a30;
+        margin-top: 8px;
+        overflow: hidden;
+      }
+      .bar span {
+        display: block;
+        height: 100%;
+        background: #1ed760;
+        border-radius: 9px;
+      }
+      .message {
+        padding: 25px;
+        color: #a1b0a6;
+        font-size: 14px;
+      }
+      .error {
+        color: #ffb7a5;
+      }
+      footer {
+        margin-top: 35px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 11px;
+        color: #84968a;
+      }
+      #updated {
+        font-size: 12px;
+        color: #a1b0a6;
+        margin-top: 12px;
+        text-align: right;
+      }
+      @media (max-width: 650px) {
+        main {
+          padding: 28px 18px 40px;
+        }
+        .hero {
+          align-items: flex-start;
+        }
+        .hero button {
+          padding: 10px 16px;
+          margin-top: 6px;
+        }
+        .stats {
+          gap: 8px;
+          margin-bottom: 32px;
+        }
+        .stat {
+          padding: 15px 12px;
+        }
+        .stat strong {
+          font-size: 26px;
+        }
+        .stat small {
+          font-size: 10px;
+        }
+        .row {
+          grid-template-columns: 20px minmax(0, 1fr) 88px;
+          gap: 10px;
+          padding: 16px 13px;
+        }
+        .row .secondary {
+          grid-column: 2 / -1;
+          text-align: left;
+          font-size: 11px;
+        }
+        .row .secondary small {
+          display: inline;
+          margin-left: 8px;
+        }
+        .description {
+          max-width: 95%;
+        }
+        footer {
+          flex-direction: column;
+        }
+      }
+    </style>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <span class="disc" aria-hidden="true"></span>Your listening rotation
+      </div>
+      <header class="hero">
+        <div>
+          <h1>In rotation.</h1>
+          <p>What’s playing. What’s moving on.</p>
+        </div>
+        <div>
+          <button id="refresh" type="button">Refresh</button>
+          <div id="updated" aria-live="polite"></div>
+        </div>
+      </header>
+      <div class="stats" aria-label="Current playlist summary">
+        <div class="stat">
+          <span class="label">IN CURRENT</span><strong id="total">—</strong
+          ><small>Tracks in your rotation</small>
+        </div>
+        <div class="stat">
+          <span class="label">YET TO PLAY</span><strong id="unplayed">—</strong
+          ><small>From the Current playlist</small>
+        </div>
+        <div class="stat">
+          <span class="label">ARCHIVE AT</span><strong id="threshold">—</strong
+          ><small id="age">Current plays or time in rotation</small>
+        </div>
+      </div>
+      <section aria-labelledby="current-title">
+        <div class="section-head">
+          <h2 id="current-title">Current</h2>
+          <span class="tag">On repeat</span>
+        </div>
+        <p class="description">
+          Plays started from Current. In Current playlist order.
+        </p>
+        <div class="list" id="current" aria-live="polite">
+          <p class="message">Loading your rotation…</p>
+        </div>
+      </section>
+      <section aria-labelledby="archived-title">
+        <div class="section-head">
+          <h2 id="archived-title">Recently archived</h2>
+          <span class="tag">Latest 20 additions</span>
+        </div>
+        <p class="description">
+          Automatic and manual additions to monthly archives. Repeat tracks
+          appear for each addition still in a playlist.
+        </p>
+        <div class="list" id="archived" aria-live="polite">
+          <p class="message">Waiting for Current to load…</p>
+        </div>
+      </section>
+      <footer>
+        <span>Just a view of your music. Manage your playlists in Spotify.</span
+        ><span id="archive-updated"></span>
+      </footer>
+    </main>
+  </body>
+</html>
