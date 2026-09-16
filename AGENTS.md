@@ -40,6 +40,17 @@ one row per addition. Repeated tracks are intentional. It reads every matching
 archive because an older month can receive a new manual addition. It does not
 use an action-history Scan or require a new GSI.
 
+The `/api/inbox` feed (`src/web/inbox.ts`) lists the top 20 Inbox tracks in
+playlist order (unavailable dropped, then sliced), each with a `likeStatus`
+(`'liked' | 'unheard'`, from `tracksAreSaved()` — saved = the operator's Liked
+tier) and `playsFromInbox` (`play_count_inbox`). Each row carries its true
+Spotify `position` (1-based index in the full playlist, unavailable items still
+counted), so dropping an unavailable track leaves a gap in the numbering rather
+than renumbering from 1. `gatherInbox` reuses
+`archived.ts`'s double-plan trick: plan once to learn the ≤20 ids, then fetch
+records + saved status for exactly those (one `containsMySavedTracks` call,
+under the 50-id cap) and re-plan. No cache — Inbox is fetched fresh like Current.
+
 `shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
 requests with any `action` query key, existing action paths, and scheduled
 invocations retain the legacy handler. Attached AWS event fields are authoritative.

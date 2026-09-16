@@ -70,6 +70,38 @@ function renderTracks(target, tracks, threshold, archived) {
     )
   $(target).replaceChildren(fragment)
 }
+function renderInbox(target, tracks) {
+  const fragment = document.createDocumentFragment()
+  for (const track of tracks) {
+    const row = element('div', 'row')
+    // The real Spotify playlist position, so it jumps where unavailable tracks
+    // were dropped rather than renumbering from 1.
+    row.append(element('span', 'number', String(track.position).padStart(2, '0')))
+    const song = element('div', 'song')
+    const link = element('a', '', track.name)
+    link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    song.append(link, element('div', 'artist', track.artist))
+    const liked = track.likeStatus === 'liked'
+    const like = element('div', 'metric')
+    like.append(
+      element('span', liked ? 'heart liked' : 'heart', liked ? '♥' : '♡'),
+      element('small', '', liked ? 'Liked' : 'Unheard'),
+    )
+    const plays = element(
+      'div',
+      'metric secondary',
+      `${track.playsFromInbox} ${track.playsFromInbox === 1 ? 'play' : 'plays'}`,
+    )
+    plays.append(element('small', '', 'in Inbox'))
+    row.append(song, like, plays)
+    fragment.append(row)
+  }
+  if (!tracks.length)
+    fragment.append(element('p', 'message', 'Your Inbox is empty.'))
+  $(target).replaceChildren(fragment)
+}
 function showError(target, error) {
   $(target).replaceChildren(
     element(
@@ -96,6 +128,15 @@ async function refresh() {
     for (const id of ['total', 'unplayed', 'threshold']) $(id).textContent = '—'
     $('updated').textContent = 'Current unavailable'
   }
+  // The Lambda has reserved concurrency 1. Never overlap requests — inbox,
+  // then archives, each after the previous resolves.
+  $('inbox').replaceChildren(element('p', 'message', 'Loading your Inbox…'))
+  try {
+    const inbox = await load('/api/inbox')
+    renderInbox('inbox', inbox.tracks)
+  } catch (error) {
+    showError('inbox', error)
+  }
   $('archived').replaceChildren(
     element(
       'p',
@@ -103,7 +144,6 @@ async function refresh() {
       'Checking monthly archives… This can take about a minute.',
     ),
   )
-  // The Lambda has reserved concurrency 1. Never overlap the two requests.
   try {
     const archived = await load('/api/archived?limit=20')
     renderTracks('archived', archived.tracks, 1, true)

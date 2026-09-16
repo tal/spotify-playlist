@@ -8,6 +8,7 @@ import { handler } from './index'
 import { buildWebApp } from './web/app'
 import { koalemosContext } from './web/context'
 import { currentPlan, gatherCurrent } from './web/current'
+import { gatherInbox } from './web/inbox'
 import { gatherArchived } from './web/archived'
 import { cachedArchiveLoader } from './web/archive-cache'
 import { dynamoArchiveCacheStore } from './db/archive-cache'
@@ -20,6 +21,7 @@ const archived = cachedArchiveLoader(
 const web = buildWebApp({
   current: async () =>
     currentPlan(await gatherCurrent(await koalemosContext())),
+  inbox: async () => gatherInbox(await koalemosContext(), 20),
   archived,
 })
 

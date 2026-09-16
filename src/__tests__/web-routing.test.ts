@@ -13,6 +13,7 @@ test('gate accepts only the intended local GET routes', () => {
     '/',
     '/app.js',
     '/api/current',
+    '/api/inbox',
     '/api/archived',
     '/api/missing',
   ])
@@ -65,18 +66,21 @@ const current = {
   playsToArchive: 5,
   generatedAt: 'now',
 }
+const inbox = { tracks: [], trackCount: 0, likedCount: 0, generatedAt: 'now' }
 const archived = { tracks: [], trackCount: 0, generatedAt: 'now' }
 
 test('Hono serves assets and APIs, validates limits, and never falls through', async () => {
   const limits: number[] = []
   const app = buildWebApp({
     current: async () => current,
+    inbox: async () => inbox,
     archived: async (limit) => {
       limits.push(limit)
       return archived
     },
   })
   expect(await (await app.request('/api/current')).json()).toEqual(current)
+  expect(await (await app.request('/api/inbox')).json()).toEqual(inbox)
   expect(await (await app.request('/api/archived')).json()).toEqual(archived)
   await app.request('/api/archived?limit=3')
   expect(limits).toEqual([20, 3])
@@ -96,6 +100,9 @@ test('loader errors return JSON with the shared normalization', async () => {
     current: async () => {
       throw new Error('unavailable')
     },
+    inbox: async () => {
+      throw 'cannot find playlist named Inbox'
+    },
     archived: async () => {
       throw 'cannot find playlist'
     },
@@ -103,5 +110,6 @@ test('loader errors return JSON with the shared normalization', async () => {
   const failure = await app.request('/api/current')
   expect(failure.status).toBe(500)
   expect(await failure.json()).toEqual({ error: 'unavailable' })
+  expect((await app.request('/api/inbox')).status).toBe(400)
   expect((await app.request('/api/archived')).status).toBe(400)
 })

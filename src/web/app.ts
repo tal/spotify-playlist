@@ -3,9 +3,11 @@ import { join } from 'node:path'
 import { normalizeActionError } from '../action-error'
 import type { currentPlan } from './current'
 import type { archivedPlan } from './archived'
+import type { inboxPlan } from './inbox'
 
 type Loaders = {
   current: () => Promise<ReturnType<typeof currentPlan>>
+  inbox: () => Promise<ReturnType<typeof inboxPlan>>
   archived: (limit: number) => Promise<ReturnType<typeof archivedPlan>>
 }
 
@@ -48,6 +50,7 @@ export function buildWebApp(loaders: Loaders) {
     }),
   )
   app.get('/api/current', async (c) => c.json(await loaders.current()))
+  app.get('/api/inbox', async (c) => c.json(await loaders.inbox()))
   app.get('/api/archived', async (c) => {
     const raw = c.req.query('limit') ?? '20'
     if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 20) {
