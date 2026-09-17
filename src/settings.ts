@@ -55,6 +55,23 @@ export function buildArchiveMatcher(prefix?: string) {
   }
 }
 
+/**
+ * A sortable key for an archive playlist name: a larger number is a more recent
+ * month. Tolerates the optional dev `[Test] ` prefix; a non-archive name sorts
+ * last (`-Infinity`).
+ *
+ * The dashboard's archive feed sorts matched archives by this descending and
+ * reads them newest-month-first, stopping once it has collected enough
+ * additions to fill the display limit — so it never crawls every archive
+ * playlist. This is the same statement of the archive name format as
+ * `buildArchiveMatcher` / `buildArchiveNamer` and must stay in step with them.
+ */
+export function archiveMonthOrder(name: string): number {
+  const match = name.match(new RegExp(`(\\d{4}) - (${MONTH_NAMES.join('|')})$`))
+  if (!match) return Number.NEGATIVE_INFINITY
+  return Number(match[1]) * 12 + MONTH_NAMES.indexOf(match[2])
+}
+
 const MINUTE_MS = 1000 * 60
 const HOUR_MS = MINUTE_MS * 60
 export const DAY_MS = HOUR_MS * 24

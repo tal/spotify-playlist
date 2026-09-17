@@ -200,14 +200,14 @@ async function refresh() {
     element(
       'p',
       'message',
-      'Checking monthly archives… This can take about a minute.',
+      'Reading the latest monthly archives…',
     ),
   )
   try {
     const archived = await load('/api/archived?limit=20')
     renderTracks('archived', archived.tracks, 1, true)
     $('archive-updated').textContent =
-      `Archives updated ${new Date(archived.generatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · cached for 12 hours`
+      `Archives updated ${new Date(archived.generatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · live`
   } catch (error) {
     showError('archived', error)
     $('archive-updated').textContent = 'Archives unavailable'

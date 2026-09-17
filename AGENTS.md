@@ -38,9 +38,16 @@ at `/api/current`, `/api/inbox`, `/api/promotes`, and `/api/archived?limit=20`
 — collapsible, start open, native (no JS).
 The archive feed includes automatic and manual additions still present in
 monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
-one row per addition. Repeated tracks are intentional. It reads every matching
-archive because an older month can receive a new manual addition. It does not
-use an action-history Scan or require a new GSI.
+one row per addition. Repeated tracks are intentional. `gatherArchived` sorts
+the matched archives by month **descending** (via `archiveMonthOrder` in
+`settings.ts`, which tolerates the dev `[Test] ` prefix) and reads them
+newest-month-first, **stopping after the first playlist that brings the
+collected additions to the requested limit** — it breaks only between whole
+playlists, so a read month contributes all of its additions. This deliberately
+**does not** catch a manual addition to an *older* month: once the limit is
+filled the older archives are never read. That is the intended efficiency
+trade — the old behavior crawled every matching archive. It does not use an
+action-history Scan or require a new GSI.
 
 The `/api/inbox` feed (`src/web/inbox.ts`) lists the top 20 Inbox tracks in
 playlist order (unavailable dropped, then sliced), each with a `likeStatus`
@@ -111,12 +118,13 @@ feed self-corrects over time regardless.
 requests with any `action` query key, existing action paths, and scheduled
 invocations retain the legacy handler. Attached AWS event fields are authoritative.
 The UI reads the four APIs sequentially and retries each once; concurrency remains 1.
-Archive responses are cached for 12 hours in the user's `archiveDashboardCacheV1`
-DynamoDB attribute (development uses `archiveDashboardTestCacheV1`). A cache hit
-uses exactly one projected GetItem, with no Spotify/token bootstrap. After expiry,
-the next request rebuilds all 20 entries and updates only that cache attribute.
-The original `generatedAt` remains visible; Current is fetched fresh every time.
-No timer or scheduled cache rebuild is added. Failures are not cached.
+The archive feed is **not cached** — it is fetched fresh every load, like the
+other three. Reading only the newest months (newest-first, until the display
+limit is filled) is cheap enough that the old 12-hour DynamoDB cache was
+removed: `src/web/archive-cache.ts`, `src/db/archive-cache.ts`, and the
+`archiveDashboardCacheV1` / `archiveDashboardTestCacheV1` user-row attributes
+are gone. Stale values may still sit on the user row from before this change;
+they are dead data, never read, and were not migrated away.
 The Function URL remains unauthenticated, as specified by the plan.
 
 The prod dashboard is served at **https://spotify.tal.by** (a custom domain in

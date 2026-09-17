@@ -11,21 +11,15 @@ import { currentPlan, gatherCurrent } from './web/current'
 import { gatherInbox } from './web/inbox'
 import { gatherArchived } from './web/archived'
 import { gatherPromotes } from './web/promotes'
-import { cachedArchiveLoader } from './web/archive-cache'
-import { dynamoArchiveCacheStore } from './db/archive-cache'
-
-const archived = cachedArchiveLoader(
-  async () => gatherArchived(await koalemosContext(), 20),
-  dynamoArchiveCacheStore('koalemos', dev.isDev ? 'development' : 'production'),
-)
 
 const web = buildWebApp({
   current: async () =>
     currentPlan(await gatherCurrent(await koalemosContext())),
   inbox: async () => gatherInbox(await koalemosContext(), 20),
-  archived,
-  // Fresh every load: the source is a tiny capped list on the user row, not the
-  // archive's many-playlist crawl, so there is nothing worth caching.
+  // Fresh every load: only the newest archive months are read, newest-first,
+  // until the display limit is filled — cheap enough that caching is not worth
+  // the extra DynamoDB round-trips or the staleness.
+  archived: async (limit) => gatherArchived(await koalemosContext(), limit),
   promotes: async () => gatherPromotes(await koalemosContext(), 20),
 })
 

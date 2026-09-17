@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test'
-import { buildArchiveMatcher, buildArchiveNamer } from '../settings'
+import {
+  archiveMonthOrder,
+  buildArchiveMatcher,
+  buildArchiveNamer,
+} from '../settings'
 
 /**
  * ArchiveAction uses this to decide which playlists count as archives when
@@ -113,4 +117,37 @@ describe('buildArchiveNamer round-trips through buildArchiveMatcher', () => {
       expect(new Set(repeated).size).toBe(1)
     })
   }
+})
+
+/**
+ * The dashboard's archive feed sorts matched archives by this key descending to
+ * read the newest months first. It has to order strictly by year then month,
+ * tolerate the dev prefix, and sink any non-archive name so it is never read.
+ */
+describe('archiveMonthOrder', () => {
+  it('orders strictly by year then month, newest largest', () => {
+    const chronological = [
+      '2012 - May',
+      '2025 - December',
+      '2026 - January',
+      '2026 - August',
+      '2026 - September',
+    ]
+    const shuffled = [...chronological].reverse()
+    shuffled.sort((a, b) => archiveMonthOrder(a) - archiveMonthOrder(b))
+    expect(shuffled).toEqual(chronological)
+  })
+
+  it('reads through the optional dev prefix', () => {
+    expect(archiveMonthOrder('[Test] 2026 - September')).toBe(
+      archiveMonthOrder('2026 - September'),
+    )
+  })
+
+  it('sinks a non-archive name below every real month', () => {
+    expect(archiveMonthOrder('Starred')).toBe(Number.NEGATIVE_INFINITY)
+    expect(archiveMonthOrder('Starred')).toBeLessThan(
+      archiveMonthOrder('2012 - May'),
+    )
+  })
 })

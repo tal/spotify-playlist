@@ -1,5 +1,5 @@
 import type { PerformContext } from '../actions/action'
-import { buildArchiveMatcher } from '../settings'
+import { archiveMonthOrder, buildArchiveMatcher } from '../settings'
 
 export type ArchiveEntry = {
   playlistId: string
@@ -39,11 +39,16 @@ export async function gatherArchived(ctx: PerformContext, limit = 20) {
   const matches = buildArchiveMatcher(
     ctx.settings.current === 'Current Test' ? '[Test]' : undefined,
   )
-  const playlists = (await ctx.client.allPlaylists()).filter((p) =>
-    matches(p.name),
-  )
-  // Every archive can receive a manual addition today, regardless of its month.
-  // Read each one; stopping at the newest named month would silently miss events.
+  const playlists = (await ctx.client.allPlaylists())
+    .filter((p) => matches(p.name))
+    // allPlaylists() returns library order, not date order — sort by month so we
+    // can read the most recent archives first.
+    .sort((a, b) => archiveMonthOrder(b.name) - archiveMonthOrder(a.name))
+  // Read the newest months first and stop once we have enough additions to fill
+  // the display limit. This deliberately gives up catching a manual addition to
+  // an *older* month: once the limit is met the older archives are never read.
+  // We break only after finishing a whole playlist, so a month is never read in
+  // part — every addition within a read month is included before we stop.
   const entries: ArchiveEntry[] = []
   for (const playlist of playlists) {
     const items = await ctx.client.tracksForPlaylist(playlist)
@@ -62,6 +67,7 @@ export async function gatherArchived(ctx: PerformContext, limit = 20) {
         },
       })
     }
+    if (entries.length >= limit) break
   }
   const recent = archivedPlan(entries, {}, ctx.now, limit)
   const ids = [...new Set(recent.tracks.map((t) => t.id))]

@@ -53,38 +53,39 @@ test('archive limit is applied after sorting and empty results are valid', () =>
   expect(archivedPlan([], {}, 0).tracks).toEqual([])
 })
 
-test('gather reads every matching month including old ones, then joins only selected ids', async () => {
-  const { gatherArchived } = await import('../web/archived')
-  const { buildArchiveNamer } = await import('../settings')
-  const visited: string[] = []
-  const joined: string[][] = []
-  const ctx = {
+const item = (id: string, added_at: string) => ({
+  added_at,
+  track: {
+    id,
+    uri: `spotify:track:${id}`,
+    name: id,
+    artists: [{ name: 'Artist' }],
+    album: { name: 'Album' },
+  },
+})
+
+// allPlaylists() returns library order, not month order; the newest archive is
+// deliberately buried and the older months come before it, so a naive read
+// would visit them first. Non-archive and dev-prefixed names must be skipped.
+const archiveCtx = (
+  visited: string[],
+  joined: string[][],
+  tracks: Record<string, ReturnType<typeof item>[]>,
+) =>
+  ({
     now: 0,
-    settings: {
-      current: 'Current',
-      archivePlaylistNameFor: buildArchiveNamer(),
-    },
+    settings: { current: 'Current' },
     client: {
       allPlaylists: async () => [
-        { id: 'new', name: '2026 - September' },
         { id: 'old', name: '2012 - May' },
+        { id: 'mid', name: '2026 - August' },
+        { id: 'new', name: '2026 - September' },
         { id: 'other', name: 'Starred' },
         { id: 'test', name: '[Test] 2026 - September' },
       ],
       tracksForPlaylist: async ({ id }: { id: string }) => {
         visited.push(id)
-        return [
-          {
-            added_at: id === 'old' ? '2026-09-15' : '2026-09-10',
-            track: {
-              id: 'same',
-              uri: 'spotify:track:same',
-              name: 'Track',
-              artists: [{ name: 'Artist' }],
-              album: { name: 'Album' },
-            },
-          },
-        ]
+        return tracks[id] ?? []
       },
     },
     dynamo: {
@@ -93,9 +94,36 @@ test('gather reads every matching month including old ones, then joins only sele
         return {}
       },
     },
-  } as unknown as import('../actions/action').PerformContext
-  const result = await gatherArchived(ctx)
-  expect(visited).toEqual(['new', 'old'])
-  expect(joined).toEqual([['same']])
-  expect(result.tracks.map((t) => t.playlistId)).toEqual(['old', 'new'])
+  }) as unknown as import('../actions/action').PerformContext
+
+test('gather reads the newest month first and stops once the limit is filled', async () => {
+  const { gatherArchived } = await import('../web/archived')
+  const visited: string[] = []
+  const joined: string[][] = []
+  const ctx = archiveCtx(visited, joined, {
+    new: [item('s1', '2026-09-10'), item('s2', '2026-09-11')],
+    mid: [item('a1', '2026-08-01')],
+    old: [item('o1', '2012-05-01')],
+  })
+  const result = await gatherArchived(ctx, 2)
+  // Only the newest month is read; August and May are never visited.
+  expect(visited).toEqual(['new'])
+  // Newest added_at first, and only the selected ids are joined against Dynamo.
+  expect(result.tracks.map((t) => t.id)).toEqual(['s2', 's1'])
+  expect(joined).toEqual([['s2', 's1']])
+})
+
+test('gather keeps reading older months until the display limit is filled', async () => {
+  const { gatherArchived } = await import('../web/archived')
+  const visited: string[] = []
+  const joined: string[][] = []
+  const ctx = archiveCtx(visited, joined, {
+    new: [item('s1', '2026-09-10')],
+    mid: [item('a1', '2026-08-01')],
+    old: [item('o1', '2012-05-01')],
+  })
+  const result = await gatherArchived(ctx, 3)
+  // One addition per month, so it walks newest → oldest until it has three.
+  expect(visited).toEqual(['new', 'mid', 'old'])
+  expect(result.tracks.map((t) => t.id)).toEqual(['s1', 'a1', 'o1'])
 })
