@@ -104,66 +104,6 @@ export function promotedMembership(state: TriageMembership): TriageMembership {
 }
 
 /**
- * The lifecycle label the operator thinks in, derived from raw membership.
- * Current wins outright; otherwise Inbox + saved is Liked, Inbox alone is
- * Unheard; a track in neither playlist is Liked when still saved, Removed when
- * not. This is a best-effort projection for display, not a fourth source of
- * truth — the raw membership travels alongside it in `locationSnapshot`.
- */
-function stageFor(m: TriageMembership): PromoteLocationSnapshotData['stage'] {
-  if (m.current === 'present') return 'current'
-  if (m.inbox === 'present') return m.saved === 'present' ? 'liked' : 'unheard'
-  return m.saved === 'present' ? 'liked' : 'removed'
-}
-
-/** Membership → the stored before/after snapshot (stage label + raw fields). */
-export function locationSnapshot(
-  m: TriageMembership,
-): PromoteLocationSnapshotData {
-  return {
-    stage: stageFor(m),
-    saved: m.saved === 'present' ? 'saved' : 'unsaved',
-    inbox: m.inbox,
-    current: m.current,
-  }
-}
-
-/**
- * Re-read a specific track's Inbox/Current/saved membership from Spotify. Used
- * to capture the *measured* after-state of a promote, so it runs post-mutation.
- *
- * The promote mutations change the playlists but do not refresh the client's
- * per-playlist track cache, so the two relevant entries are dropped first to
- * force a fresh read. Saved status (`trackIsSaved`) is never memoized. Spotify
- * is eventually consistent, so a read taken immediately after an add/remove can
- * still lag — this is the measured state, not a guarantee.
- */
-export async function readTriageMembership(
-  client: Spotify,
-  track: BasicTrackData,
-): Promise<TriageMembership> {
-  const { inbox, current } = await getTriageInfo(client)
-
-  const cache = (client as any)._tracks
-  if (cache) {
-    delete cache[inbox.id]
-    delete cache[current.id]
-  }
-
-  const [inInbox, inCurrent, saved] = await Promise.all([
-    client.trackInPlaylist(track, inbox),
-    client.trackInPlaylist(track, current),
-    client.trackIsSaved(track),
-  ])
-
-  return {
-    inbox: membershipOf(inInbox),
-    current: membershipOf(inCurrent),
-    saved: membershipOf(saved),
-  }
-}
-
-/**
  * Everything `promotePlan` decides from. Gathered once by the shell so the
  * planner reads no player, no playlist and no library.
  */

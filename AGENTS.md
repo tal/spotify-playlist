@@ -108,13 +108,16 @@ promotions still observable in live playlist/library state. The Inbox playlist
 is **not** a source: its `added_at` is the *inboxing* time, not a promote time
 (the Unheard → Liked timestamp lives in Liked Songs).
 
-**Now vestigial** (still present, no longer read by the feed): the
+**Removed 2026-09-17** with this rewrite (do not reintroduce): the
 `recentPromotesV1` list + `recordRecentPromote` write path in `putActionHistory`,
-`getRecentPromoteRefs` / `getActionHistoryByRefs`, the `backfill-promotes`
-action + `Dynamo.backfillRecentPromotes` / `planBackfillList` / `nextRecentPromotes`
-/ `PROMOTE_BACKFILL_*`, and the `before`/`after` snapshot capture in
-`MagicPromoteAction` (`PromoteLocationSnapshotData`). Safe to remove in a
-follow-up; left in place for now.
+`getRecentPromoteRefs` / `getActionHistoryByRefs`, `RecentPromoteRef`, the
+`backfill-promotes` action + `Dynamo.backfillRecentPromotes` / `planBackfillList`
+/ `nextRecentPromotes` / `PROMOTE_BACKFILL_*` / `RECENT_PROMOTES_CAP`, and the
+`before`/`after` snapshot capture in `MagicPromoteAction`
+(`PromoteLocationSnapshotData`, plus `locationSnapshot` / `readTriageMembership`
+/ `stageFor` in `track-action.ts`). `putActionHistory` still writes the row;
+`forStorage` now stores just `{ id, created_at, action, item, mutations }`. Any
+`recentPromotesV1` value still sitting on a user row is dead data.
 
 `shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
 requests with any `action` query key, existing action paths, and scheduled

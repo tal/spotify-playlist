@@ -47,13 +47,17 @@ timestamp lives in Liked Songs).
   *33*, *Canyon Nights* each showing their like row **and** their Current row.
   Live `status` joined correctly (`promoted` / `inbox` / `removed` / `unknown`).
 
-## Left vestigial (not removed here)
+## Old machinery removed (same day, follow-up commit)
 
-The old DynamoDB machinery is now unused by the feed but still present:
-`recentPromotesV1` + `recordRecentPromote`, `getRecentPromoteRefs` /
-`getActionHistoryByRefs`, the `backfill-promotes` action +
-`backfillRecentPromotes` / `planBackfillList` / `nextRecentPromotes` /
-`PROMOTE_BACKFILL_*` (and `backfill-promotes.test.ts`), and the `before`/`after`
-snapshot capture in `MagicPromoteAction`. Safe to delete in a follow-up. The
-`recentPromotesV1` value backfilled into the prod user row earlier today is now
-orphaned/dead data.
+The now-dead DynamoDB machinery was deleted rather than left vestigial:
+`recentPromotesV1` + `recordRecentPromote` (and its `putActionHistory` call),
+`getRecentPromoteRefs` / `getActionHistoryByRefs`, `RecentPromoteRef`, the
+`backfill-promotes` action + `backfillRecentPromotes` / `planBackfillList` /
+`nextRecentPromotes` / `PROMOTE_BACKFILL_*` / `RECENT_PROMOTES_CAP`, and the
+`before`/`after` snapshot capture in `MagicPromoteAction` (plus `locationSnapshot`
+/ `readTriageMembership` / `stageFor` and `PromoteLocationSnapshotData`).
+`backfill-promotes.test.ts` and `promote-snapshot.test.ts` were deleted.
+`putActionHistory` still writes the row; `forStorage` now stores just
+`{ id, created_at, action, item, mutations }`. Verified: typecheck clean, 570
+pass / 0 fail. The `recentPromotesV1` value backfilled into the prod user row
+earlier today is now orphaned/dead data on the row.
