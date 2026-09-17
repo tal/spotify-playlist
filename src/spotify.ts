@@ -597,6 +597,43 @@ export class Spotify {
     return { saved, removed }
   }
 
+  /**
+   * The most recently saved (liked) tracks, newest-first — Spotify returns saved
+   * tracks in descending `added_at`. Sources the Unheard → Liked stage of the
+   * promotes feed, where the save `added_at` is the moment the track was liked.
+   * One page (≤50) is plenty: the feed only ever emits `limit` merged rows.
+   */
+  @logError
+  async recentSavedTracks(limit = 50): Promise<
+    Array<{
+      id: string
+      uri: string
+      name: string
+      artist: string
+      addedAt: string
+    }>
+  > {
+    const response = await retrySpotifyCallWithTokenRefresh(
+      this,
+      () => this.client.getMySavedTracks({ limit: Math.min(limit, 50) }),
+      'recentSavedTracks',
+      this.retryConfig.savedTracks,
+    )
+    return (response.body.items ?? []).flatMap((item) => {
+      const track = item.track
+      if (!track?.id) return []
+      return [
+        {
+          id: track.id,
+          uri: track.uri,
+          name: track.name,
+          artist: track.artists.map((a) => a.name).join(', '),
+          addedAt: item.added_at,
+        },
+      ]
+    })
+  }
+
   @logError
   async addTrackToPlaylist(
     { id: playlistId }: PlaylistID,

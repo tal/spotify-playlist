@@ -1,8 +1,17 @@
 import type { PerformContext } from '../actions/action'
 
-/** Composite key for one stored promote row, matching the table's (id, created_at). */
-function keyOf(ref: { id: string; created_at: number }): string {
-  return `${ref.id} ${ref.created_at}`
+/** The lifecycle stage a promotion lands the track in. An enum, not a boolean. */
+export type PromoteStage = 'liked' | 'current'
+
+/** One promotion event before live track data is joined on. */
+export type PromoteEvent = {
+  id: string
+  uri: string
+  name: string
+  artist: string
+  /** ms epoch of the Spotify `added_at` that dates this promotion. */
+  at: number
+  stage: PromoteStage
 }
 
 export type PromoteRow = {
@@ -10,54 +19,56 @@ export type PromoteRow = {
   uri: string
   name: string
   artist: string
-  album: string
   promotedAt: string
-  before: PromoteLocationSnapshotData | null
-  after: PromoteLocationSnapshotData | null
-  /** Whether the promote was later undone — an enum, not a boolean. */
-  state: 'active' | 'undone'
-  /** Where the track sits now, joined live from the track table. */
+  /** Which stage of the promote this row represents. */
+  stage: PromoteStage
+  /** Human transition label, e.g. `'unheard → liked'`. */
+  transition: string
+  /** Where the track sits now, joined live from the `track` table. */
   liveStatus: TrackStatus | null
   plays: number
   playsFromInbox: number
   playsFromCurrent: number
 }
 
+const TRANSITION: Record<PromoteStage, string> = {
+  liked: 'unheard → liked',
+  current: 'liked → current',
+}
+
 /**
- * Shape the recent promotes into the feed, newest-first in `refs` order. A ref
- * whose row is missing (deleted from the table) is dropped rather than shown as
- * a blank; the surplus in the capped list is what keeps 20 real rows available.
- * Rows without an `item` (nothing to name) are dropped for the same reason.
+ * Merge the two promote-event streams — Liked → Current from the Current
+ * playlist's `added_at`, and Unheard → Liked from Liked Songs' `added_at` —
+ * newest-first, and take the top `limit`. A track promoted through both stages
+ * appears **twice**, once per stage, on purpose. Pure so the merge/order/slice
+ * is pinned by a test without Spotify. Unlike the old action-history source,
+ * Spotify's `added_at` is reliably time-ordered, so "newest first" is exact.
  */
 export function promotesPlan(
-  refs: RecentPromoteRef[],
-  rows: PromoteActionHistoryItemData[],
+  events: PromoteEvent[],
   records: Record<string, TrackItem | undefined>,
   now: number,
   limit = 20,
 ) {
-  const byKey = new Map(rows.map((row) => [keyOf(row), row]))
-
-  const tracks = refs
-    .map((ref) => byKey.get(keyOf(ref)))
-    .flatMap((row): PromoteRow[] => {
-      if (!row?.item) return []
-      const record = records[row.item.id]
-      return [
-        {
-          ...row.item,
-          promotedAt: new Date(row.created_at).toISOString(),
-          before: row.before ?? null,
-          after: row.after ?? null,
-          state: row.undone ? 'undone' : 'active',
-          liveStatus: record?.status ?? null,
-          plays: record?.play_count ?? 0,
-          playsFromInbox: record?.play_count_inbox ?? 0,
-          playsFromCurrent: record?.play_count_current ?? 0,
-        },
-      ]
-    })
+  const tracks = [...events]
+    .sort((a, b) => b.at - a.at)
     .slice(0, limit)
+    .map((event): PromoteRow => {
+      const record = records[event.id]
+      return {
+        id: event.id,
+        uri: event.uri,
+        name: event.name,
+        artist: event.artist,
+        promotedAt: new Date(event.at).toISOString(),
+        stage: event.stage,
+        transition: TRANSITION[event.stage],
+        liveStatus: record?.status ?? null,
+        plays: record?.play_count ?? 0,
+        playsFromInbox: record?.play_count_inbox ?? 0,
+        playsFromCurrent: record?.play_count_current ?? 0,
+      }
+    })
 
   return {
     tracks,
@@ -66,12 +77,56 @@ export function promotesPlan(
   }
 }
 
+/**
+ * Build the promotes feed straight from Spotify: the Current playlist gives the
+ * Liked → Current promotions (its per-track `added_at`), and the newest saved
+ * tracks give the Unheard → Liked promotions (their save `added_at`). Both are
+ * merged by time. No action-history Scan, no `recentPromotesV1` — Spotify's own
+ * timestamps are the source, so ordering is reliable rather than approximate.
+ */
 export async function gatherPromotes(ctx: PerformContext, limit = 20) {
-  const refs = await ctx.dynamo.getRecentPromoteRefs(limit)
-  const rows = await ctx.dynamo.getActionHistoryByRefs(refs)
+  const playlist = await ctx.client.playlist(ctx.settings.current)
+  const [currentItems, saved] = await Promise.all([
+    ctx.client.tracksForPlaylist(playlist),
+    ctx.client.recentSavedTracks(50),
+  ])
+
+  const currentEvents: PromoteEvent[] = currentItems.flatMap(
+    ({ track, added_at }) =>
+      track?.id
+        ? [
+            {
+              id: track.id,
+              uri: track.uri,
+              name: track.name,
+              artist: track.artists.map((a) => a.name).join(', '),
+              at: new Date(added_at).getTime(),
+              stage: 'current' as const,
+            },
+          ]
+        : [],
+  )
+
+  const likeEvents: PromoteEvent[] = saved.map((s) => ({
+    id: s.id,
+    uri: s.uri,
+    name: s.name,
+    artist: s.artist,
+    at: new Date(s.addedAt).getTime(),
+    stage: 'liked' as const,
+  }))
+
+  const events = [...currentEvents, ...likeEvents].filter(
+    (e) => !Number.isNaN(e.at),
+  )
+
+  // Double-plan like inbox/archived: plan once to learn the ≤limit ids, fetch
+  // records for exactly those, then re-plan with live status/plays joined.
   const ids = [
-    ...new Set(rows.flatMap((row) => (row.item ? [row.item.id] : []))),
+    ...new Set(
+      promotesPlan(events, {}, ctx.now, limit).tracks.map((t) => t.id),
+    ),
   ]
   const records = ids.length ? await ctx.dynamo.getTracks(ids) : {}
-  return promotesPlan(refs, rows, records, Date.now(), limit)
+  return promotesPlan(events, records, Date.now(), limit)
 }

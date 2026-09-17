@@ -79,48 +79,42 @@ exactly those (one `containsMySavedTracks` call, under the 50-id cap) and re-pla
 No cache — Inbox is fetched fresh like Current.
 
 The `/api/promotes` feed (`src/web/promotes.ts`) lists the 20 most recent
-**promote actions** with a before/after snapshot of each track's lifecycle
-`stage` (`'unheard' | 'liked' | 'current' | 'removed'`) + `saved`
-(`'saved' | 'unsaved'`) status, plus its live `status`/play counts today. The
-snapshot is captured in `MagicPromoteAction`: `perform()` stashes the `before`
-membership from the gather it already runs, and `forStorage()` (post-mutation)
-re-reads a *measured* `after` via `readTriageMembership()` (which drops the
-Inbox/Current entries from the client's `_tracks` cache first; Spotify is
-eventually consistent, so it can lag). A failed after-read is swallowed and
-leaves `before`/`after` absent — it never blocks the history write. Because the
-capture lives in `perform`/`forStorage`, only a **non-throttled** promote (one
-that passed `performAction`'s throttle check) records anything. Row fields:
-`PromoteLocationSnapshotData`, `before?`/`after?` on
-`PromoteActionHistoryItemData` (`src/db/action-history.d.ts`). The feed is
-**forward-only** — promotes made before this shipped are not in it.
+**promotion events**, sourced **directly from Spotify's `added_at` timestamps**
+— which are reliably time-ordered, so "newest first" is exact (no Scan, no
+`recentPromotesV1`, no hash-order approximation). It merges the two promote
+stages:
 
-The promotes feed's source is a capped (`RECENT_PROMOTES_CAP = 50`) newest-first
-`recentPromotesV1` list on the user row, maintained by `putActionHistory`
-whenever it writes a `'promote-track'` row (best-effort; demote/undo skipped).
-`gatherPromotes` reads that list (one projected `GetItem`), `BatchGet`s exactly
-those `action_history` rows, and joins the ids against `track`. **Never** source
-this from `getRecentActionsOfType` — that is a filtered Scan on the ~96 MB /
-1-RCU `action_history` table and cannot even reliably return the newest rows.
-No GSI was created; the list is the source. Fresh every load, no cache.
+- **Liked → Current** — every track in the **Current** playlist, dated by that
+  playlist item's `added_at` (`stage: 'current'`).
+- **Unheard → Liked** — the newest **saved (liked) tracks** from
+  `client.recentSavedTracks(50)` (Spotify returns saves newest-first by
+  `added_at`), dated by the save `added_at` (`stage: 'liked'`).
 
-To seed the list with promotes that predate it (it is forward-only, so it
-starts empty), the `backfill-promotes` action calls `Dynamo.backfillRecentPromotes`
-(`src/db/dynamo.ts`). It is the **one sanctioned Scan** of `action_history` and
-is deliberately **never on a page-load path** — run it by hand
-(`bun run cli backfill-promotes`, optional `?target=` / `?page-limit=`). It
-**lazily** pages a filtered Scan: reads one page, and fetches the next only if it
-still holds fewer than `PROMOTE_BACKFILL_TARGET` (= the cap, 50) promote
-pointers, examining at most `PROMOTE_BACKFILL_PAGE_LIMIT` (400) rows per page —
-tuned so a single burst-affordable page usually clears the target (promotes are
-~14–18% of rows). It merges with any existing list via the pure `planBackfillList`
-(dedupe on `(id, created_at)`, sort newest-first, trim to cap), so it is
-idempotent and safe to re-run. **Ordering is approximate**: a Scan returns
-hash-order, not time-order, so a single lazy page yields 50 real-but-scattered
-promotes and the genuinely most-recent ones can sit in an unread page and be
-missed. Raise `?target=` to read more pages (drains the burst bucket → throttle
-backoff, but one-time) for a closer approximation, or read the whole table for
-true newest-first. New promotes still append correctly going forward, so the
-feed self-corrects over time regardless.
+A track promoted through **both** stages appears **twice**, one row per stage —
+this is intended, not a dedup bug (e.g. a track liked at 17:26 then moved to
+Current at 17:31 shows both). `gatherPromotes` reads the Current playlist and
+the recent saves in parallel, builds the two `PromoteEvent` streams, and the
+pure `promotesPlan` merges them newest-first, slices to 20, and joins live
+`status`/play counts from `track` (via the same double-plan trick as
+inbox/archived: plan once to learn the ≤20 ids, `getTracks` those, re-plan). Each
+row carries a `transition` label (`'unheard → liked'` / `'liked → current'`), the
+resulting `stage`, `promotedAt`, `liveStatus`, and play counts. Fresh every
+load, no cache.
+
+Consequences of sourcing from live Spotify state, by design: a track that left
+Current (archived, or hand-moved) no longer contributes its Current event, and
+an unsaved/removed track no longer contributes its like event — the feed shows
+promotions still observable in live playlist/library state. The Inbox playlist
+is **not** a source: its `added_at` is the *inboxing* time, not a promote time
+(the Unheard → Liked timestamp lives in Liked Songs).
+
+**Now vestigial** (still present, no longer read by the feed): the
+`recentPromotesV1` list + `recordRecentPromote` write path in `putActionHistory`,
+`getRecentPromoteRefs` / `getActionHistoryByRefs`, the `backfill-promotes`
+action + `Dynamo.backfillRecentPromotes` / `planBackfillList` / `nextRecentPromotes`
+/ `PROMOTE_BACKFILL_*`, and the `before`/`after` snapshot capture in
+`MagicPromoteAction` (`PromoteLocationSnapshotData`). Safe to remove in a
+follow-up; left in place for now.
 
 `shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
 requests with any `action` query key, existing action paths, and scheduled

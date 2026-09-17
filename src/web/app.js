@@ -115,7 +115,7 @@ function transition(before, after, key) {
 function renderPromotes(target, tracks) {
   const fragment = document.createDocumentFragment()
   for (const [index, track] of tracks.entries()) {
-    const row = element('div', track.state === 'undone' ? 'row undone' : 'row')
+    const row = element('div', 'row')
     row.append(element('span', 'number', String(index + 1).padStart(2, '0')))
     const song = element('div', 'song')
     const link = element('a', '', track.name)
@@ -123,33 +123,34 @@ function renderPromotes(target, tracks) {
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
     song.append(link, element('div', 'artist', track.artist))
-    // Where it sat → where it landed, plus the saved change underneath.
+    // The stage transition this event represents, e.g. "unheard → current".
     const move = element('div', 'metric')
-    const stages = transition(
-      { current: stageLabel(track.before && track.before.stage) },
-      { current: stageLabel(track.after && track.after.stage) },
-      'current',
+    const [from, to] = String(track.transition).split(' → ')
+    const stages = element('span')
+    stages.append(
+      element('span', 'stage', from ?? '—'),
+      element('span', 'arrow', '→'),
+      element('span', 'stage', to ?? '—'),
     )
-    const savedChange = element('small')
-    savedChange.append(
-      transition(track.before, track.after, 'saved'),
-      track.state === 'undone' ? ' · undone' : '',
-    )
-    move.append(stages, savedChange)
-    // When it was promoted, and where the track lives now.
+    move.append(stages)
+    // When it was promoted, and where the track lives now. Show the play count
+    // that matches the stage: Current plays for a Current promote, Inbox for a
+    // like.
+    const plays =
+      track.stage === 'current' ? track.playsFromCurrent : track.playsFromInbox
     const when = element('div', 'metric secondary', date(track.promotedAt))
     when.append(
       element(
         'small',
         '',
-        `now: ${track.liveStatus ?? 'unknown'} · ${track.playsFromCurrent} ${track.playsFromCurrent === 1 ? 'play' : 'plays'}`,
+        `now: ${track.liveStatus ?? 'unknown'} · ${plays} ${plays === 1 ? 'play' : 'plays'}`,
       ),
     )
     row.append(song, move, when)
     fragment.append(row)
   }
   if (!tracks.length)
-    fragment.append(element('p', 'message', 'No promotes recorded yet.'))
+    fragment.append(element('p', 'message', 'No promotions found.'))
   $(target).replaceChildren(fragment)
 }
 function showError(target, error) {
