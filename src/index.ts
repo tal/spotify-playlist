@@ -277,6 +277,21 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         body: JSON.stringify(listenStatsPlan(snapshot), null, 2),
       }
     }
+    case 'backfill-promotes': {
+      // One-time seed of the promotes feed from action_history for promotes made
+      // before the forward-only recentPromotesV1 list shipped. Deliberate and
+      // idempotent — the feed itself never Scans. Optional overrides:
+      // ?target=<n> (how many to collect) and ?page-limit=<n> (rows examined
+      // per lazy page).
+      const target = Number(ev.queryStringParameters?.['target']) || undefined
+      const pageLimit =
+        Number(ev.queryStringParameters?.['page-limit']) || undefined
+      const result = await dynamo.backfillRecentPromotes({ target, pageLimit })
+      return {
+        statusCode: 200,
+        body: JSON.stringify(result, null, 2),
+      }
+    }
     case 'clear-liked-cache':
       // Clear the cache for current user
       await spotify.clearLikedSongsCache()

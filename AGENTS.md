@@ -88,6 +88,25 @@ this from `getRecentActionsOfType` — that is a filtered Scan on the ~96 MB /
 1-RCU `action_history` table and cannot even reliably return the newest rows.
 No GSI was created; the list is the source. Fresh every load, no cache.
 
+To seed the list with promotes that predate it (it is forward-only, so it
+starts empty), the `backfill-promotes` action calls `Dynamo.backfillRecentPromotes`
+(`src/db/dynamo.ts`). It is the **one sanctioned Scan** of `action_history` and
+is deliberately **never on a page-load path** — run it by hand
+(`bun run cli backfill-promotes`, optional `?target=` / `?page-limit=`). It
+**lazily** pages a filtered Scan: reads one page, and fetches the next only if it
+still holds fewer than `PROMOTE_BACKFILL_TARGET` (= the cap, 50) promote
+pointers, examining at most `PROMOTE_BACKFILL_PAGE_LIMIT` (400) rows per page —
+tuned so a single burst-affordable page usually clears the target (promotes are
+~14–18% of rows). It merges with any existing list via the pure `planBackfillList`
+(dedupe on `(id, created_at)`, sort newest-first, trim to cap), so it is
+idempotent and safe to re-run. **Ordering is approximate**: a Scan returns
+hash-order, not time-order, so a single lazy page yields 50 real-but-scattered
+promotes and the genuinely most-recent ones can sit in an unread page and be
+missed. Raise `?target=` to read more pages (drains the burst bucket → throttle
+backoff, but one-time) for a closer approximation, or read the whole table for
+true newest-first. New promotes still append correctly going forward, so the
+feed self-corrects over time regardless.
+
 `shouldRouteToWeb()` in `src/lambda-bun.ts` gates only HTTP GET requests. Root
 requests with any `action` query key, existing action paths, and scheduled
 invocations retain the legacy handler. Attached AWS event fields are authoritative.

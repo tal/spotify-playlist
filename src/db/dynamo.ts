@@ -8,6 +8,7 @@ import {
   PutCommand,
   DeleteCommand,
   ScanCommand,
+  ScanCommandInput,
   QueryCommandInput,
   UpdateCommandInput,
   GetCommandInput,
@@ -52,6 +53,45 @@ export function nextRecentPromotes(
     (e) => !(e.id === ref.id && e.created_at === ref.created_at),
   )
   return [ref, ...withoutDupe].slice(0, cap)
+}
+
+/**
+ * How many promote pointers `backfillRecentPromotes` collects before it stops
+ * paging. Matches the cap so a seeded list carries the same headroom a
+ * naturally-grown one would (undone/deleted rows can drop out and still leave
+ * 20 for the feed).
+ */
+export const PROMOTE_BACKFILL_TARGET = RECENT_PROMOTES_CAP
+
+/**
+ * The most rows one backfill Scan page may EXAMINE (DynamoDB `Limit`, applied
+ * before the promote filter). In the live table promotes are ~14–18% of rows, so
+ * ~400 examined reliably yields ≥50 promotes in a single burst-affordable page
+ * (~110 RCU, comfortably under the 300-RCU burst bucket). If a sparse region
+ * underdelivers, the lazy loop just reads another page — this is a floor on
+ * per-page cost, not a cap on how much the backfill can ultimately collect.
+ */
+export const PROMOTE_BACKFILL_PAGE_LIMIT = 400
+
+/**
+ * Merge freshly-scanned promote pointers with whatever the list already holds,
+ * dedupe on the (id, created_at) composite key, order newest-first, and trim to
+ * the cap. Pure so ordering/dedupe/cap is pinned by a test without DynamoDB. Any
+ * forward-appended ref already on the row is newer than the backfilled history
+ * and survives the sort; a repeat of the same pointer collapses to one.
+ */
+export function planBackfillList(
+  existing: RecentPromoteRef[] | undefined,
+  scanned: RecentPromoteRef[],
+  cap: number = RECENT_PROMOTES_CAP,
+): RecentPromoteRef[] {
+  const byKey = new Map<string, RecentPromoteRef>()
+  for (const ref of [...(existing ?? []), ...scanned]) {
+    byKey.set(`${ref.id} ${ref.created_at}`, ref)
+  }
+  return [...byKey.values()]
+    .sort((a, b) => b.created_at - a.created_at)
+    .slice(0, cap)
 }
 
 /** All the status reconciliation sweep reads off a track row. */
@@ -705,6 +745,79 @@ export class Dynamo {
     )
     const refs = (resp.Item?.recentPromotesV1 as RecentPromoteRef[]) ?? []
     return refs.slice(0, limit)
+  }
+
+  /**
+   * Seed / top up `recentPromotesV1` from `action_history` for promotes that
+   * predate the forward-only list. Lazily pages a filtered Scan: it reads one
+   * page, and only fetches the next if it *still* has fewer than `target`
+   * promote pointers, so a well-stocked table is done in one page. Each page
+   * examines at most `pageLimit` rows (`Limit`), keeping a page cheap enough to
+   * come out of the burst bucket.
+   *
+   * This is the ONE sanctioned Scan of `action_history` and it is deliberately
+   * NOT on any page-load path (see AGENTS.md — the feed never Scans). Run it by
+   * hand via CLI `backfill-promotes`. It merges with any existing list, so it is
+   * idempotent and safe to re-run; ordering is approximate (Scan is hash-order,
+   * so the collected pointers are sorted newest-first but a very recent promote
+   * hashed into an unread page can be missed until it appends itself forward).
+   */
+  async backfillRecentPromotes({
+    target = PROMOTE_BACKFILL_TARGET,
+    pageLimit = PROMOTE_BACKFILL_PAGE_LIMIT,
+  }: { target?: number; pageLimit?: number } = {}) {
+    const scanned: RecentPromoteRef[] = []
+    let ExclusiveStartKey: ScanCommandInput['ExclusiveStartKey'] = undefined
+    let pagesRead = 0
+    let examined = 0
+
+    do {
+      const params: ScanCommandInput = {
+        TableName: 'action_history',
+        FilterExpression: '#action = :promote',
+        // `action` is a DynamoDB reserved word.
+        ExpressionAttributeNames: { '#action': 'action' },
+        ExpressionAttributeValues: { ':promote': 'promote-track' },
+        // Only the composite key is needed; the feed re-reads the full rows.
+        ProjectionExpression: 'id, created_at',
+        Limit: pageLimit,
+        ConsistentRead: false,
+        ExclusiveStartKey,
+      }
+      const resp = await AWS.docs.send(new ScanCommand(params))
+      pagesRead += 1
+      examined += resp.ScannedCount ?? 0
+      for (const item of resp.Items ?? []) {
+        scanned.push({ id: item.id, created_at: item.created_at })
+      }
+      ExclusiveStartKey = resp.LastEvaluatedKey
+      // Lazy: page on only while there is more table AND we still need more.
+    } while (ExclusiveStartKey && scanned.length < target)
+
+    const existing = await this.getRecentPromoteRefs(RECENT_PROMOTES_CAP)
+    const next = planBackfillList(existing, scanned, RECENT_PROMOTES_CAP)
+
+    await AWS.docs.send(
+      new UpdateCommand({
+        TableName: 'user',
+        Key: { id: this.user.id },
+        UpdateExpression: 'SET recentPromotesV1 = :list',
+        // Never resurrect a user removed mid-run into a partial row.
+        ConditionExpression: 'attribute_exists(id)',
+        ExpressionAttributeValues: { ':list': next },
+      }),
+    )
+
+    const dates = next.map((r) => r.created_at)
+    return {
+      pagesRead,
+      examined,
+      found: scanned.length,
+      stored: next.length,
+      reachedEndOfTable: !ExclusiveStartKey,
+      newest: dates.length ? new Date(Math.max(...dates)).toISOString() : null,
+      oldest: dates.length ? new Date(Math.min(...dates)).toISOString() : null,
+    }
   }
 
   /**
