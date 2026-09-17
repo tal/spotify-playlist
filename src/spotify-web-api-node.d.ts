@@ -11,6 +11,8 @@ declare module 'spotify-web-api-node' {
     id: string
     display_name: string
     email?: string
+    /** ISO 3166-1 alpha-2 country of the account, e.g. 'US'. Requires user-read-private. */
+    country?: string
     uri: string
     type: 'user'
   }
@@ -134,6 +136,12 @@ declare module 'spotify-web-api-node' {
   export interface Track extends Entity {
     album: Album
     artists: Artist[]
+    /**
+     * Markets the track can be played in. Present when the request omits a
+     * `market` param; a track greyed out for the user has a list that excludes
+     * their country (sometimes an empty list).
+     */
+    available_markets?: string[]
     disc_number: number
     is_playable: boolean
     explicit: boolean

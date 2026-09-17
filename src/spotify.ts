@@ -312,16 +312,25 @@ export class Spotify {
   }
 
   private _meData?: User
-  async myID() {
-    if (this._meData) {
-      return this._meData.id
+  private async me() {
+    if (!this._meData) {
+      const me = await this.client.getMe()
+      this._meData = me.body
     }
+    return this._meData
+  }
 
-    const me = await this.client.getMe()
+  async myID() {
+    return (await this.me()).id
+  }
 
-    this._meData = me.body
-
-    return me.body.id
+  /**
+   * The account's market (ISO country code) or undefined if the profile did not
+   * include it. Used to decide which Inbox tracks are region-locked for the user
+   * without passing a `market` param to playlist reads (which would relink ids).
+   */
+  async myCountry() {
+    return (await this.me()).country
   }
 
   @asyncMemoize

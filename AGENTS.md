@@ -48,10 +48,20 @@ playlist order (unavailable dropped, then sliced), each with a `likeStatus`
 tier) and `playsFromInbox` (`play_count_inbox`). Each row carries its true
 Spotify `position` (1-based index in the full playlist, unavailable items still
 counted), so dropping an unavailable track leaves a gap in the numbering rather
-than renumbering from 1. `gatherInbox` reuses
-`archived.ts`'s double-plan trick: plan once to learn the ≤20 ids, then fetch
-records + saved status for exactly those (one `containsMySavedTracks` call,
-under the 50-id cap) and re-plan. No cache — Inbox is fetched fresh like Current.
+than renumbering from 1. **Unavailable** now covers both a null `track` and a
+region-locked one: `gatherInbox` reads the account's market via
+`client.myCountry()` (cached `getMe().country`) and tags each entry with an
+`availability` enum through the pure `trackAvailability(track, country)` helper —
+unavailable when Spotify's `available_markets` excludes the country (an empty
+list counts) or `is_playable === false`; an unknown country or missing
+`available_markets` stays available so a data gap never blanks the whole feed.
+`inboxPlan` drops `availability === 'unavailable'` alongside null tracks. The
+Inbox is read **without** a `market` param on purpose, so Spotify returns full
+`available_markets` and does **not** relink track ids — the ids stay aligned with
+the `play_count`/liked lookups. `gatherInbox` reuses `archived.ts`'s double-plan
+trick: plan once to learn the ≤20 ids, then fetch records + saved status for
+exactly those (one `containsMySavedTracks` call, under the 50-id cap) and re-plan.
+No cache — Inbox is fetched fresh like Current.
 
 The `/api/promotes` feed (`src/web/promotes.ts`) lists the 20 most recent
 **promote actions** with a before/after snapshot of each track's lifecycle
@@ -89,6 +99,9 @@ the next request rebuilds all 20 entries and updates only that cache attribute.
 The original `generatedAt` remains visible; Current is fetched fresh every time.
 No timer or scheduled cache rebuild is added. Failures are not cached.
 The Function URL remains unauthenticated, as specified by the plan.
+
+The prod dashboard is served at **https://spotify.tal.by** (a custom domain in
+front of the Lambda Function URL).
 
 `listen-stats` shares the Current gather/planner but preserves its original JSON
 fields. Null/unresolvable Spotify tracks are omitted. Page loaders are injected
