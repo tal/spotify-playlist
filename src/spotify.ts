@@ -5,6 +5,7 @@ import SpotifyWebApi, {
   RecentlyPlayedItem,
 } from 'spotify-web-api-node'
 import { chunkArray } from './utils/array'
+import { albumArt } from './album-art'
 
 function hasID(obj: { id: string } | { uri: string }): obj is { id: string } {
   if ('id' in obj) {
@@ -611,6 +612,7 @@ export class Spotify {
       name: string
       artist: string
       addedAt: string
+      image: string | null
     }>
   > {
     const response = await retrySpotifyCallWithTokenRefresh(
@@ -629,6 +631,7 @@ export class Spotify {
           name: track.name,
           artist: track.artists.map((a) => a.name).join(', '),
           addedAt: item.added_at,
+          image: albumArt(track.album?.images),
         },
       ]
     })

@@ -1,11 +1,12 @@
 import type { PerformContext } from '../actions/action'
 import { archiveMonthOrder, buildArchiveMatcher } from '../settings'
+import { albumArt } from '../album-art'
 
 export type ArchiveEntry = {
   playlistId: string
   playlist: string
   addedAt: string
-  track: BasicTrackData | null
+  track: (BasicTrackData & { image?: string | null }) | null
 }
 
 export function archivedPlan(
@@ -64,6 +65,7 @@ export async function gatherArchived(ctx: PerformContext, limit = 20) {
           name: track.name,
           artist: track.artists.map((a) => a.name).join(', '),
           album: track.album.name,
+          image: albumArt(track.album.images),
         },
       })
     }

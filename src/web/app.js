@@ -11,6 +11,28 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text
   return node
 }
+// The song cell is identical across every feed: an album-art thumbnail (when
+// the track has one) beside the track name (a link to Spotify) and its artist.
+function songCell(track) {
+  const song = element('div', 'song')
+  if (track.image) {
+    const art = element('img', 'art')
+    art.src = track.image
+    art.alt = '' // decorative — the track name link is the accessible label
+    art.loading = 'lazy'
+    art.width = 44
+    art.height = 44
+    song.append(art)
+  }
+  const text = element('div', 'song-text')
+  const link = element('a', '', track.name)
+  link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
+  link.target = '_blank'
+  link.rel = 'noopener noreferrer'
+  text.append(link, element('div', 'artist', track.artist))
+  song.append(text)
+  return song
+}
 async function load(url) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -28,12 +50,7 @@ function renderTracks(target, tracks, threshold, archived) {
   for (const [index, track] of tracks.entries()) {
     const row = element('div', 'row')
     row.append(element('span', 'number', String(index + 1).padStart(2, '0')))
-    const song = element('div', 'song')
-    const link = element('a', '', track.name)
-    link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
-    link.target = '_blank'
-    link.rel = 'noopener noreferrer'
-    song.append(link, element('div', 'artist', track.artist))
+    const song = songCell(track)
     const plays = element(
       'div',
       'metric',
@@ -77,12 +94,7 @@ function renderInbox(target, tracks) {
     // The real Spotify playlist position, so it jumps where unavailable tracks
     // were dropped rather than renumbering from 1.
     row.append(element('span', 'number', String(track.position).padStart(2, '0')))
-    const song = element('div', 'song')
-    const link = element('a', '', track.name)
-    link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
-    link.target = '_blank'
-    link.rel = 'noopener noreferrer'
-    song.append(link, element('div', 'artist', track.artist))
+    const song = songCell(track)
     const liked = track.likeStatus === 'liked'
     const like = element('div', 'metric')
     like.append(
@@ -117,12 +129,7 @@ function renderPromotes(target, tracks) {
   for (const [index, track] of tracks.entries()) {
     const row = element('div', 'row')
     row.append(element('span', 'number', String(index + 1).padStart(2, '0')))
-    const song = element('div', 'song')
-    const link = element('a', '', track.name)
-    link.href = `https://open.spotify.com/track/${encodeURIComponent(track.id)}`
-    link.target = '_blank'
-    link.rel = 'noopener noreferrer'
-    song.append(link, element('div', 'artist', track.artist))
+    const song = songCell(track)
     // The stage transition this event represents, e.g. "unheard → current".
     const move = element('div', 'metric')
     const [from, to] = String(track.transition).split(' → ')

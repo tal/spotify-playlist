@@ -1,5 +1,6 @@
 import type { PerformContext } from '../actions/action'
 import { DAY_MS } from '../settings'
+import { albumArt } from '../album-art'
 
 export type CurrentSnapshot = {
   playlist: string
@@ -10,6 +11,7 @@ export type CurrentSnapshot = {
       uri: string
       name: string
       artists: Array<{ name: string }>
+      album?: { images?: Array<{ url: string; width?: number | null }> }
     } | null
   }>
   records: Record<string, TrackItem | undefined>
@@ -50,6 +52,7 @@ export function currentPlan(snapshot: CurrentSnapshot) {
         addedAt: added_at,
         name: track.name,
         artist: track.artists.map((a) => a.name).join(', '),
+        image: albumArt(track.album?.images),
         daysInCurrent: Math.floor(
           (snapshot.now - new Date(added_at).getTime()) / DAY_MS,
         ),
@@ -81,6 +84,8 @@ export function listenStatsPlan(snapshot: CurrentSnapshot) {
   )
   return {
     ...summary,
-    tracks: ordered.map(({ id, uri, addedAt, ...track }) => track),
+    // listen-stats keeps its original JSON contract, so drop the web-only
+    // fields (id/uri/addedAt and the album-art image).
+    tracks: ordered.map(({ id, uri, addedAt, image, ...track }) => track),
   }
 }

@@ -1,4 +1,5 @@
 import type { PerformContext } from '../actions/action'
+import { albumArt } from '../album-art'
 
 /** Whether the track can be played in the operator's market. */
 export type Availability = 'available' | 'unavailable'
@@ -22,6 +23,7 @@ export type InboxEntry = {
     uri: string
     name: string
     artist: string
+    image?: string | null
   } | null
 }
 
@@ -78,6 +80,7 @@ export function inboxPlan(
         uri: track.uri,
         name: track.name,
         artist: track.artist,
+        image: track.image ?? null,
         likeStatus,
         status: records[track.id]?.status ?? null,
         playsFromInbox: records[track.id]?.play_count_inbox ?? 0,
@@ -110,6 +113,7 @@ export async function gatherInbox(ctx: PerformContext, limit = 20) {
           uri: track.uri,
           name: track.name,
           artist: track.artists.map((a) => a.name).join(', '),
+          image: albumArt(track.album?.images),
         }
       : null,
   }))

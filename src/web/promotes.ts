@@ -1,4 +1,5 @@
 import type { PerformContext } from '../actions/action'
+import { albumArt } from '../album-art'
 
 /** The lifecycle stage a promotion lands the track in. An enum, not a boolean. */
 export type PromoteStage = 'liked' | 'current'
@@ -9,6 +10,7 @@ export type PromoteEvent = {
   uri: string
   name: string
   artist: string
+  image?: string | null
   /** ms epoch of the Spotify `added_at` that dates this promotion. */
   at: number
   stage: PromoteStage
@@ -19,6 +21,7 @@ export type PromoteRow = {
   uri: string
   name: string
   artist: string
+  image: string | null
   promotedAt: string
   /** Which stage of the promote this row represents. */
   stage: PromoteStage
@@ -60,6 +63,7 @@ export function promotesPlan(
         uri: event.uri,
         name: event.name,
         artist: event.artist,
+        image: event.image ?? null,
         promotedAt: new Date(event.at).toISOString(),
         stage: event.stage,
         transition: TRANSITION[event.stage],
@@ -100,6 +104,7 @@ export async function gatherPromotes(ctx: PerformContext, limit = 20) {
               uri: track.uri,
               name: track.name,
               artist: track.artists.map((a) => a.name).join(', '),
+              image: albumArt(track.album?.images),
               at: new Date(added_at).getTime(),
               stage: 'current' as const,
             },
@@ -112,6 +117,7 @@ export async function gatherPromotes(ctx: PerformContext, limit = 20) {
     uri: s.uri,
     name: s.name,
     artist: s.artist,
+    image: s.image ?? null,
     at: new Date(s.addedAt).getTime(),
     stage: 'liked' as const,
   }))

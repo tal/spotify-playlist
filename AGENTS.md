@@ -56,6 +56,17 @@ re-fetches whichever tab is currently visible (forcing even a cached one), so it
 doubles as the promotes refresh button. The top stats block is populated only by
 the Current feed, so a deep-link straight to another tab shows `—` there until
 Current is visited.
+
+Every track row across all four feeds shows an **album-art thumbnail**. Each
+feed's plan projects an `image: string | null` picked from Spotify's
+`album.images` by the shared `albumArt()` helper (`src/album-art.ts` — smallest
+image ≥ 64px, else the largest; `null` when there's no artwork). The raw
+`tracksForPlaylist` items already carry `album.images`, so Current/Inbox/Archived
+read it directly; `Spotify.recentSavedTracks` now also returns `image` so the
+Liked → Current promotes stage has art too. `app.js`'s shared `songCell()` renders
+the `<img class="art">` (lazy, decorative `alt=""`) beside the track link, and
+omits it when `image` is null. `listenStatsPlan` strips `image` to keep its
+original JSON contract.
 The archive feed includes automatic and manual additions still present in
 monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
 one row per addition. Repeated tracks are intentional. `gatherArchived` sorts
