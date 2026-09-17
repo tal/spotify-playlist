@@ -47,6 +47,12 @@ timestamp lives in Liked Songs).
   *33*, *Canyon Nights* each showing their like row **and** their Current row.
   Live `status` joined correctly (`promoted` / `inbox` / `removed` / `unknown`).
 
+## Debug tweak (same day)
+
+`renderPromotes` now shows the full ISO `promotedAt` on its own small line under
+the human date — the date alone hides the time, so same-day promotes were
+indistinguishable. Added for debugging the ordering.
+
 ## Old machinery removed (same day, follow-up commit)
 
 The now-dead DynamoDB machinery was deleted rather than left vestigial:

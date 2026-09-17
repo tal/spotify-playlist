@@ -139,6 +139,9 @@ function renderPromotes(target, tracks) {
     const plays =
       track.stage === 'current' ? track.playsFromCurrent : track.playsFromInbox
     const when = element('div', 'metric secondary', date(track.promotedAt))
+    // Full ISO timestamp for debugging — the human date above hides the time, so
+    // same-day promotes look identical without it.
+    when.append(element('small', 'timestamp', track.promotedAt))
     when.append(
       element(
         'small',
