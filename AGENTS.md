@@ -34,8 +34,16 @@ bun run src/lambda-bun.ts
 
 `src/web/` serves a dark dashboard at `/`, JavaScript at `/app.js`, and JSON
 at `/api/current`, `/api/inbox`, `/api/promotes`, and `/api/archived?limit=20`
-(integer limits 1–20). All four page sections are `<details class="panel" open>`
-— collapsible, start open, native (no JS).
+(integer limits 1–20). The four page sections are a JS-driven ARIA **tab set**:
+a `role="tablist"` of four `<button role="tab">`s over four
+`<section role="tabpanel" class="panel">`s (ids `panel-current`/`-inbox`/
+`-promotes`/`-archived`, each holding the render-target list div `current`/
+`inbox`/`promotes`/`archived`). `app.js`'s `selectTab()` toggles the `hidden`
+attribute on the tab's `aria-controls` target and drives a roving `tabindex`
+with arrow/Home/End keys (automatic activation). It always starts on Current
+and does not persist the active tab. **All four feeds still load up-front**,
+sequentially, in `refresh()` (the Lambda is concurrency-1) — tabs only change
+which panel is visible, never what is fetched.
 The archive feed includes automatic and manual additions still present in
 monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
 one row per addition. Repeated tracks are intentional. `gatherArchived` sorts

@@ -101,6 +101,33 @@ test('Hono serves assets and APIs, validates limits, and never falls through', a
   expect(js.headers.get('cache-control')).toBe('no-store')
 })
 
+test('dashboard renders the four sections as an ARIA tab set wired to the render targets', async () => {
+  const app = buildWebApp({
+    current: async () => current,
+    inbox: async () => inbox,
+    archived: async () => archived,
+    promotes: async () => promotes,
+  })
+  const page = await (await app.request('/')).text()
+  expect(page).toContain('role="tablist"')
+  // Automatic activation starts on Current, and exactly one tab is selected.
+  expect(page.match(/aria-selected="true"/g)).toHaveLength(1)
+  expect(page).toMatch(/id="tab-current"[^>]*aria-selected="true"/)
+  for (const key of ['current', 'inbox', 'promotes', 'archived']) {
+    // Each tab controls its panel, and each panel holds the id app.js renders
+    // into — selectTab() toggles `hidden` on the aria-controls target, so this
+    // wiring is what makes tab switching reveal the right list.
+    expect(page).toContain(`id="tab-${key}"`)
+    expect(page).toContain(`aria-controls="panel-${key}"`)
+    expect(page).toContain(`id="panel-${key}"`)
+    expect(page).toContain(`id="${key}"`)
+  }
+  // The three inactive panels start hidden; Current does not.
+  for (const key of ['inbox', 'promotes', 'archived'])
+    expect(page).toMatch(new RegExp(`id="panel-${key}"[^>]*hidden`))
+  expect(page).not.toMatch(/id="panel-current"[^>]*hidden/)
+})
+
 test('loader errors return JSON with the shared normalization', async () => {
   const app = buildWebApp({
     current: async () => {

@@ -92,8 +92,7 @@
         cursor: wait;
       }
       button:focus-visible,
-      a:focus-visible,
-      summary:focus-visible {
+      a:focus-visible {
         outline: 2px solid #1ed760;
         outline-offset: 5px;
       }
@@ -123,42 +122,49 @@
         color: #91a098;
         font-size: 12px;
       }
-      section,
+      .tabs {
+        display: flex;
+        gap: 26px;
+        margin: 34px 0 24px;
+        border-bottom: 1px solid #2a352e;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .tab {
+        flex: 0 0 auto;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #a1b0a6;
+        padding: 4px 2px 13px;
+        margin-bottom: -1px;
+        font-size: 16px;
+        font-weight: 650;
+        white-space: nowrap;
+        border-bottom: 2px solid transparent;
+      }
+      .tab:hover {
+        background: transparent;
+        color: #f2f5f3;
+      }
+      .tab[aria-selected='true'] {
+        color: #f2f5f3;
+        border-bottom-color: #1ed760;
+      }
       .panel {
-        margin-top: 36px;
+        margin-top: 0;
+      }
+      .panel[hidden] {
+        display: none;
       }
       .section-head {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-bottom: 7px;
-      }
-      summary.section-head {
-        cursor: pointer;
-        list-style: none;
-        user-select: none;
-      }
-      summary.section-head::-webkit-details-marker {
-        display: none;
-      }
-      .section-head h2 {
-        margin-right: auto;
-      }
-      .chev {
-        color: #a1b0a6;
-        font-size: 11px;
-        transition: transform 0.15s ease;
-      }
-      .panel:not([open]) .chev {
-        transform: rotate(-90deg);
-      }
-      .panel:not([open]) .section-head {
-        margin-bottom: 0;
-      }
-      h2 {
-        font-size: 24px;
-        letter-spacing: -0.025em;
-        margin: 0;
+        margin-bottom: 12px;
       }
       .tag {
         color: #70dc95;
@@ -279,6 +285,12 @@
         main {
           padding: 28px 18px 40px;
         }
+        .tabs {
+          gap: 18px;
+        }
+        .tab {
+          font-size: 15px;
+        }
         .hero {
           align-items: flex-start;
         }
@@ -352,25 +364,77 @@
           ><small id="age">Current plays or time in rotation</small>
         </div>
       </div>
-      <details class="panel" open>
-        <summary class="section-head">
-          <h2 id="current-title">Current</h2>
-          <span class="tag">On repeat</span>
-          <span class="chev" aria-hidden="true">▾</span>
-        </summary>
+      <div class="tabs" role="tablist" aria-label="Listening sections">
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-current"
+          aria-controls="panel-current"
+          aria-selected="true"
+        >
+          Current
+        </button>
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-inbox"
+          aria-controls="panel-inbox"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Inbox
+        </button>
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-promotes"
+          aria-controls="panel-promotes"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Recently promoted
+        </button>
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-archived"
+          aria-controls="panel-archived"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Recently archived
+        </button>
+      </div>
+      <section
+        class="panel"
+        role="tabpanel"
+        id="panel-current"
+        aria-labelledby="tab-current"
+        tabindex="0"
+      >
+        <div class="section-head"><span class="tag">On repeat</span></div>
         <p class="description">
           Plays started from Current. In Current playlist order.
         </p>
         <div class="list" id="current" aria-live="polite">
           <p class="message">Loading your rotation…</p>
         </div>
-      </details>
-      <details class="panel" open>
-        <summary class="section-head">
-          <h2 id="inbox-title">Inbox</h2>
+      </section>
+      <section
+        class="panel"
+        role="tabpanel"
+        id="panel-inbox"
+        aria-labelledby="tab-inbox"
+        tabindex="0"
+        hidden
+      >
+        <div class="section-head">
           <span class="tag">Top 20 · in playlist order</span>
-          <span class="chev" aria-hidden="true">▾</span>
-        </summary>
+        </div>
         <p class="description">
           The next tracks awaiting triage, in Inbox order. The heart shows
           whether you’ve liked it; plays are the ones started from Inbox.
@@ -378,13 +442,18 @@
         <div class="list" id="inbox" aria-live="polite">
           <p class="message">Waiting for Current to load…</p>
         </div>
-      </details>
-      <details class="panel" open>
-        <summary class="section-head">
-          <h2 id="promotes-title">Recently promoted</h2>
+      </section>
+      <section
+        class="panel"
+        role="tabpanel"
+        id="panel-promotes"
+        aria-labelledby="tab-promotes"
+        tabindex="0"
+        hidden
+      >
+        <div class="section-head">
           <span class="tag">Latest 20 promotes</span>
-          <span class="chev" aria-hidden="true">▾</span>
-        </summary>
+        </div>
         <p class="description">
           Where each track sat and whether it was saved, just before the promote
           and measured right after. “Now” is where it lives today.
@@ -392,13 +461,18 @@
         <div class="list" id="promotes" aria-live="polite">
           <p class="message">Waiting for Inbox to load…</p>
         </div>
-      </details>
-      <details class="panel" open>
-        <summary class="section-head">
-          <h2 id="archived-title">Recently archived</h2>
+      </section>
+      <section
+        class="panel"
+        role="tabpanel"
+        id="panel-archived"
+        aria-labelledby="tab-archived"
+        tabindex="0"
+        hidden
+      >
+        <div class="section-head">
           <span class="tag">Latest 20 additions</span>
-          <span class="chev" aria-hidden="true">▾</span>
-        </summary>
+        </div>
         <p class="description">
           Automatic and manual additions to monthly archives. Repeat tracks
           appear for each addition still in a playlist.
@@ -406,7 +480,7 @@
         <div class="list" id="archived" aria-live="polite">
           <p class="message">Waiting for Current to load…</p>
         </div>
-      </details>
+      </section>
       <footer>
         <span>Just a view of your music. Manage your playlists in Spotify.</span
         ><span id="archive-updated"></span>

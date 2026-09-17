@@ -215,5 +215,42 @@ async function refresh() {
     $('refresh').disabled = false
   }
 }
+// Tabs: pure show/hide over the four sections. They all still load up-front in
+// refresh() (the Lambda is concurrency-1), so switching a tab only changes which
+// panel is visible — it never fetches. Always starts on Current.
+const tabs = [...document.querySelectorAll('[role="tab"]')]
+function selectTab(tab) {
+  for (const other of tabs) {
+    const selected = other === tab
+    other.setAttribute('aria-selected', String(selected))
+    other.tabIndex = selected ? 0 : -1
+    $(other.getAttribute('aria-controls')).hidden = !selected
+  }
+}
+tabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => selectTab(tab))
+  // Roving tabindex + automatic activation: arrows/Home/End move focus and the
+  // panel together, since the target content is already loaded.
+  tab.addEventListener('keydown', (event) => {
+    const step =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0
+    let next
+    if (step) next = tabs[(index + step + tabs.length) % tabs.length]
+    else if (event.key === 'Home') next = tabs[0]
+    else if (event.key === 'End') next = tabs[tabs.length - 1]
+    else return
+    event.preventDefault()
+    selectTab(next)
+    next.focus()
+  })
+})
+// Normalize to whatever the markup marks selected (Current), so exactly one
+// panel is ever visible even if the HTML drifts.
+selectTab(tabs.find((t) => t.getAttribute('aria-selected') === 'true') ?? tabs[0])
+
 $('refresh').addEventListener('click', refresh)
 refresh()
