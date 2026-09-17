@@ -38,12 +38,24 @@ at `/api/current`, `/api/inbox`, `/api/promotes`, and `/api/archived?limit=20`
 a `role="tablist"` of four `<button role="tab">`s over four
 `<section role="tabpanel" class="panel">`s (ids `panel-current`/`-inbox`/
 `-promotes`/`-archived`, each holding the render-target list div `current`/
-`inbox`/`promotes`/`archived`). `app.js`'s `selectTab()` toggles the `hidden`
+`inbox`/`promotes`/`archived`). `app.js`'s `showTab()` toggles the `hidden`
 attribute on the tab's `aria-controls` target and drives a roving `tabindex`
-with arrow/Home/End keys (automatic activation). It always starts on Current
-and does not persist the active tab. **All four feeds still load up-front**,
-sequentially, in `refresh()` (the Lambda is concurrency-1) — tabs only change
-which panel is visible, never what is fetched.
+with arrow/Home/End keys (automatic activation).
+
+**The active tab is the URL hash** (`#current`/`#inbox`/`#promotes`/`#archived`),
+so it survives reload and is deep-linkable; an unknown/absent hash falls back to
+Current. Clicks and arrow keys set `location.hash`, and a single `hashchange`
+handler (`syncFromHash`) does the show **and** the load. **Feeds load lazily,
+per tab** — a tab fetches only when first shown, not up-front. Loads are
+serialized through one promise chain (the Lambda is concurrency-1) and a feed
+already in flight is not enqueued twice. Each feed is cached after its first
+successful load **except Recently promoted**, which is `reload: true` — a debug
+view that re-fetches every time it is shown (or re-clicked while active). A
+failed load is left uncached so the next visit retries. The **Refresh** button
+re-fetches whichever tab is currently visible (forcing even a cached one), so it
+doubles as the promotes refresh button. The top stats block is populated only by
+the Current feed, so a deep-link straight to another tab shows `—` there until
+Current is visited.
 The archive feed includes automatic and manual additions still present in
 monthly `YYYY - MonthName` playlists, newest Spotify `added_at` first, with
 one row per addition. Repeated tracks are intentional. `gatherArchived` sorts

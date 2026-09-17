@@ -165,65 +165,121 @@ function showError(target, error) {
     ),
   )
 }
-async function refresh() {
-  $('refresh').disabled = true
+// Time-of-day stamp for the "updated" line. Falls back to the client clock when
+// a feed carries no server timestamp (inbox/promotes don't).
+const clock = (value) =>
+  new Date(value ?? Date.now()).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+// One entry per tab. `load()` fetches + renders into its own panel and returns
+// an optional server timestamp for the "updated" line. `reload: true` means
+// never cache — re-fetch every time the tab is shown (Recently promoted is a
+// debug view, so it must always reflect live state).
+const feeds = {
+  current: {
+    label: 'Current',
+    placeholder: 'Loading your rotation…',
+    loaded: false,
+    reload: false,
+    async load() {
+      const current = await load('/api/current')
+      renderTracks('current', current.tracks, current.playsToArchive, false)
+      $('total').textContent = current.trackCount
+      $('unplayed').textContent = current.neverPlayedFromCurrent
+      $('threshold').textContent = `${current.playsToArchive} plays`
+      $('age').textContent = `or ${current.archivesAfterDays} days in Current`
+      return current.generatedAt
+    },
+    onError() {
+      for (const id of ['total', 'unplayed', 'threshold'])
+        $(id).textContent = '—'
+    },
+  },
+  inbox: {
+    label: 'Inbox',
+    placeholder: 'Loading your Inbox…',
+    loaded: false,
+    reload: false,
+    async load() {
+      const inbox = await load('/api/inbox')
+      renderInbox('inbox', inbox.tracks)
+    },
+  },
+  promotes: {
+    label: 'Recently promoted',
+    placeholder: 'Loading recent promotes…',
+    loaded: false,
+    // Debug view: always re-fetch when shown or refreshed, never cache.
+    reload: true,
+    async load() {
+      const promotes = await load('/api/promotes')
+      renderPromotes('promotes', promotes.tracks)
+    },
+  },
+  archived: {
+    label: 'Recently archived',
+    placeholder: 'Reading the latest monthly archives…',
+    loaded: false,
+    reload: false,
+    async load() {
+      const archived = await load('/api/archived?limit=20')
+      renderTracks('archived', archived.tracks, 1, true)
+      $('archive-updated').textContent =
+        `Archives updated ${new Date(archived.generatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · live`
+      return archived.generatedAt
+    },
+    onError() {
+      $('archive-updated').textContent = 'Archives unavailable'
+    },
+  },
+}
+// The Lambda has reserved concurrency 1 — never overlap requests. Every feed
+// load is serialized through this single chain, and a feed already queued/in
+// flight is not enqueued twice.
+let chain = Promise.resolve()
+let loadingCount = 0
+function queueFeed(key, force) {
+  const feed = feeds[key]
+  if (!feed || feed.loading) return
+  // Lazy: skip a feed that's already loaded, unless it's a reload-always feed
+  // (promotes) or an explicit Refresh.
+  if (!force && feed.loaded && !feed.reload) return
+  feed.loading = true
+  loadingCount++
+  // Show the placeholder now, even while an earlier load is still in the chain,
+  // so the freshly-selected panel never sits on stale content.
+  $(key).replaceChildren(element('p', 'message', feed.placeholder))
   $('updated').textContent = 'Refreshing…'
+  $('refresh').disabled = true
+  chain = chain
+    .then(() => runFeed(key))
+    .finally(() => {
+      feed.loading = false
+      if (--loadingCount === 0) $('refresh').disabled = false
+    })
+}
+async function runFeed(key) {
+  const feed = feeds[key]
   try {
-    const current = await load('/api/current')
-    renderTracks('current', current.tracks, current.playsToArchive, false)
-    $('total').textContent = current.trackCount
-    $('unplayed').textContent = current.neverPlayedFromCurrent
-    $('threshold').textContent = `${current.playsToArchive} plays`
-    $('age').textContent = `or ${current.archivesAfterDays} days in Current`
-    $('updated').textContent =
-      `Current · ${new Date(current.generatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+    const at = await feed.load()
+    feed.loaded = true
+    $('updated').textContent = `${feed.label} · ${clock(at)}`
   } catch (error) {
-    showError('current', error)
-    for (const id of ['total', 'unplayed', 'threshold']) $(id).textContent = '—'
-    $('updated').textContent = 'Current unavailable'
-  }
-  // The Lambda has reserved concurrency 1. Never overlap requests — inbox,
-  // then archives, each after the previous resolves.
-  $('inbox').replaceChildren(element('p', 'message', 'Loading your Inbox…'))
-  try {
-    const inbox = await load('/api/inbox')
-    renderInbox('inbox', inbox.tracks)
-  } catch (error) {
-    showError('inbox', error)
-  }
-  $('promotes').replaceChildren(
-    element('p', 'message', 'Loading recent promotes…'),
-  )
-  try {
-    const promotes = await load('/api/promotes')
-    renderPromotes('promotes', promotes.tracks)
-  } catch (error) {
-    showError('promotes', error)
-  }
-  $('archived').replaceChildren(
-    element(
-      'p',
-      'message',
-      'Reading the latest monthly archives…',
-    ),
-  )
-  try {
-    const archived = await load('/api/archived?limit=20')
-    renderTracks('archived', archived.tracks, 1, true)
-    $('archive-updated').textContent =
-      `Archives updated ${new Date(archived.generatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · live`
-  } catch (error) {
-    showError('archived', error)
-    $('archive-updated').textContent = 'Archives unavailable'
-  } finally {
-    $('refresh').disabled = false
+    // Leave it unloaded so the next visit re-fetches rather than caching the error.
+    feed.loaded = false
+    feed.onError?.()
+    showError(key, error)
+    $('updated').textContent = `${feed.label} unavailable`
   }
 }
-// Tabs: pure show/hide over the four sections. They all still load up-front in
-// refresh() (the Lambda is concurrency-1), so switching a tab only changes which
-// panel is visible — it never fetches. Always starts on Current.
+// Tabs. The URL hash is the single source of truth for which tab is active, so
+// the choice survives reload and can be deep-linked (e.g. #promotes). Clicks and
+// arrow keys set the hash; the hashchange handler does the show + lazy-load.
 const tabs = [...document.querySelectorAll('[role="tab"]')]
-function selectTab(tab) {
+const keyOf = (tab) => tab.getAttribute('aria-controls').replace('panel-', '')
+const tabByKey = (key) => tabs.find((tab) => keyOf(tab) === key)
+function showTab(tab) {
   for (const other of tabs) {
     const selected = other === tab
     other.setAttribute('aria-selected', String(selected))
@@ -231,10 +287,24 @@ function selectTab(tab) {
     $(other.getAttribute('aria-controls')).hidden = !selected
   }
 }
+// A hash naming a real tab wins; anything else falls back to Current.
+const hashKey = () =>
+  feeds[location.hash.slice(1)] ? location.hash.slice(1) : 'current'
+function syncFromHash() {
+  const key = hashKey()
+  showTab(tabByKey(key))
+  queueFeed(key, false)
+}
 tabs.forEach((tab, index) => {
-  tab.addEventListener('click', () => selectTab(tab))
+  tab.addEventListener('click', () => {
+    const key = keyOf(tab)
+    // Clicking the already-active tab won't fire hashchange; re-trigger directly
+    // so a reload-always feed (promotes) still re-fetches on re-click.
+    if (location.hash.slice(1) === key) queueFeed(key, false)
+    else location.hash = key
+  })
   // Roving tabindex + automatic activation: arrows/Home/End move focus and the
-  // panel together, since the target content is already loaded.
+  // active tab together, via the hash.
   tab.addEventListener('keydown', (event) => {
     const step =
       event.key === 'ArrowRight' || event.key === 'ArrowDown'
@@ -248,13 +318,12 @@ tabs.forEach((tab, index) => {
     else if (event.key === 'End') next = tabs[tabs.length - 1]
     else return
     event.preventDefault()
-    selectTab(next)
     next.focus()
+    location.hash = keyOf(next)
   })
 })
-// Normalize to whatever the markup marks selected (Current), so exactly one
-// panel is ever visible even if the HTML drifts.
-selectTab(tabs.find((t) => t.getAttribute('aria-selected') === 'true') ?? tabs[0])
-
-$('refresh').addEventListener('click', refresh)
-refresh()
+window.addEventListener('hashchange', syncFromHash)
+// Refresh re-fetches whatever tab is visible — that doubles as the Recently
+// promoted refresh button, since it always acts on the active tab.
+$('refresh').addEventListener('click', () => queueFeed(hashKey(), true))
+syncFromHash()
