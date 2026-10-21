@@ -20,6 +20,7 @@ import { ScanPlaylistsForInbox } from './actions/scan-playlists-for-inbox'
 import { ProcessManualTriage } from './actions/process-manual-triage'
 import { SkipToNextTrack } from './actions/skip-to-next-track'
 import { RulePlaylistAction } from './actions/rule-playlist'
+import { SliceOfStarredAction } from './actions/slice-of-starred'
 import { UndoAction } from './actions/undo-action'
 import { settings } from './settings'
 
@@ -102,6 +103,9 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
     case 'rule-playlist':
       actions = [new RulePlaylistAction(spotify, { rule: 'smart' })]
       break
+    case 'slice-of-starred':
+      actions = [new SliceOfStarredAction(spotify)]
+      break
     case 'frequent-crawling':
       actions = [
         // Playback history runs first so anything downstream that reads listen
@@ -111,6 +115,7 @@ export const handler: APIGatewayProxyHandler = async (ev, ctx) => {
         new ProcessManualTriage(spotify),
         new ScanPlaylistsForInbox(spotify),
         new RulePlaylistAction(spotify, { rule: 'smart' }),
+        new SliceOfStarredAction(spotify),
       ]
       break
     case 'user': {

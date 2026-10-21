@@ -320,6 +320,11 @@ declare module 'spotify-web-api-node' {
       options?: { position: number },
     ): Promise<SpotifyResponse<{ snapshot_id: string }>>
 
+    replaceTracksInPlaylist(
+      playlistId: string,
+      uris: string[],
+    ): Promise<SpotifyResponse<{}>>
+
     /**
      * Get tracks in a playlist.
      * @param {string} playlistId The playlist's ID.

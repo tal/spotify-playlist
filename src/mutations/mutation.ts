@@ -34,6 +34,7 @@ export type MutationTypes =
   | 'triage-action'
   | 'set-track-status'
   | 'empty-playlist'
+  | 'replace-playlist'
   | 'rename-playlist'
   | 'skip-to-next-track'
   | 'mark-action-undone'

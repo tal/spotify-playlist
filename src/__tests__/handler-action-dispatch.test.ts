@@ -16,6 +16,7 @@ import { MagicPromoteAction } from '../actions/magic-promote-action'
 import { ProcessManualTriage } from '../actions/process-manual-triage'
 import { ProcessPlaybackHistoryAction } from '../actions/process-playback-history-action'
 import { RulePlaylistAction } from '../actions/rule-playlist'
+import { SliceOfStarredAction } from '../actions/slice-of-starred'
 import { ScanPlaylistsForInbox } from '../actions/scan-playlists-for-inbox'
 import { SkipToNextTrack } from '../actions/skip-to-next-track'
 import { UndoAction } from '../actions/undo-action'
@@ -101,6 +102,7 @@ describe('handler action dispatch', () => {
       ProcessManualTriage,
       ScanPlaylistsForInbox,
       RulePlaylistAction,
+      SliceOfStarredAction,
     ])
   })
 

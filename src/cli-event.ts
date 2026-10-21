@@ -10,6 +10,7 @@ const CLI_ACTIONS = {
   demote: { action: 'demote' },
   demotes: { action: 'demote', query: { 'and-skip': 'true' } },
   'rule-playlist': { action: 'rule-playlist', query: { rule: 'smart' } },
+  'slice-of-starred': { action: 'slice-of-starred' },
   'neo-tribal': {
     action: 'handle-playlist',
     query: { 'playlist-name': 'Neo Tribal [A]' },

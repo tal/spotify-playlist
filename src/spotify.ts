@@ -726,6 +726,18 @@ export class Spotify {
     }
   }
 
+  // Replace in one request instead of emptying the playlist before filling it.
+  async replacePlaylistTracks(playlistId: string, tracks: TrackForMove[]) {
+    if (tracks.length > 100)
+      throw new Error('Playlist replacement is limited to 100 tracks')
+    if (dev.drySpotify) return
+    await this.client.replaceTracksInPlaylist(
+      playlistId,
+      tracks.map(({ uri }) => uri),
+    )
+    delete this._tracks[playlistId]
+  }
+
   async renamePlaylist(playlistId: string, name: string) {
     console.log(`✏️ Renaming playlist ${playlistId} to "${name}"`)
     // changePlaylistDetails exists at runtime but is missing from the bundled types

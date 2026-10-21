@@ -477,6 +477,12 @@ schedule or target, and keep the action order deliberate:
    tracks.
 5. `RulePlaylistAction` rebuilds the Smart Playlist from Starred and saved-track
    data; it does not consume triage status.
+6. `SliceOfStarredAction` creates or replaces **Slice of Starred 🦦** with a
+   random consecutive 45-song window of Starred, keeping source order. Null
+   and local tracks are excluded; a shorter source contributes all addable
+   tracks. The existing Smart Playlist is separate. Run `bun run cli
+   slice-of-starred` to refresh just this playlist. It updates on each existing
+   `frequent-crawling` call (the documented schedule is every six hours).
 
 The standalone `playback` action runs playback-history processing followed by
 manual-triage backfill. The EventBridge target payload selects
