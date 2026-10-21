@@ -1,0 +1,13 @@
+# Release config for the tal:deploy skill (`/deploy <target> <channel>`).
+# Generic keys and defaults: the deploy skill's SKILL.md §2.
+# Target keys: the deploy skill's targets/<target>.md.
+# No secrets here: env var names and key paths only.
+
+lambda:
+  function: spotify-playlist-dev   # the live one behind spotify.tal.by, despite the name
+  region: us-east-1
+  ship_command: ruby scripts/publish.rb
+  version_scheme: git-sha
+  channels:
+    production:
+      health_url: https://spotify.tal.by/
