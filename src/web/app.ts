@@ -5,12 +5,14 @@ import type { currentPlan } from './current'
 import type { archivedPlan } from './archived'
 import type { inboxPlan } from './inbox'
 import type { promotesPlan } from './promotes'
+import { isTrackId, type TrackDetail } from './track'
 
 type Loaders = {
   current: () => Promise<ReturnType<typeof currentPlan>>
   inbox: () => Promise<ReturnType<typeof inboxPlan>>
   archived: (limit: number) => Promise<ReturnType<typeof archivedPlan>>
   promotes: () => Promise<ReturnType<typeof promotesPlan>>
+  track: (id: string) => Promise<TrackDetail>
 }
 
 const assets = new Map<string, Promise<string>>()
@@ -44,7 +46,13 @@ export function buildWebApp(loaders: Loaders) {
       )
     }
   })
-  app.get('/', async (c) => c.html(await asset('index.html')))
+  for (const path of ['/', '/current', '/inbox', '/promotes', '/archived']) {
+    app.get(path, async (c) => c.html(await asset('index.html')))
+  }
+  app.get('/track/:id', async (c) => {
+    if (!isTrackId(c.req.param('id'))) return c.notFound()
+    return c.html(await asset('index.html'))
+  })
   // text/* avoids the Bun Lambda layer's binary response encoding.
   app.get('/app.js', async (c) =>
     c.body(await asset('app.js'), 200, {
@@ -54,6 +62,15 @@ export function buildWebApp(loaders: Loaders) {
   app.get('/api/current', async (c) => c.json(await loaders.current()))
   app.get('/api/inbox', async (c) => c.json(await loaders.inbox()))
   app.get('/api/promotes', async (c) => c.json(await loaders.promotes()))
+  app.get('/api/track/:id', async (c) => {
+    const id = c.req.param('id')
+    if (!isTrackId(id))
+      return c.json(
+        { error: 'id must be a 22-character Spotify track id' },
+        400,
+      )
+    return c.json(await loaders.track(id))
+  })
   app.get('/api/archived', async (c) => {
     const raw = c.req.query('limit') ?? '20'
     if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 20) {

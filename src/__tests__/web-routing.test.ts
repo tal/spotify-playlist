@@ -12,6 +12,11 @@ test('gate accepts only the intended local GET routes', () => {
   for (const path of [
     '/',
     '/app.js',
+    '/current',
+    '/inbox',
+    '/promotes',
+    '/archived',
+    '/track/4uLU6hMCjMI75M1A2tKUQC',
     '/api/current',
     '/api/inbox',
     '/api/promotes',
@@ -25,6 +30,8 @@ test('gate accepts only the intended local GET routes', () => {
     '/promote',
     '/undo-last',
     '/favicon.ico',
+    '/track/nope',
+    '/inbox?action=promote',
     '/api',
   ])
     expect(shouldRouteToWeb(request(path))).toBe(false)
@@ -81,6 +88,9 @@ test('Hono serves assets and APIs, validates limits, and never falls through', a
       return archived
     },
     promotes: async () => promotes,
+    track: async () => {
+      throw new Error('unused')
+    },
   })
   expect(await (await app.request('/api/current')).json()).toEqual(current)
   expect(await (await app.request('/api/inbox')).json()).toEqual(inbox)
@@ -96,6 +106,18 @@ test('Hono serves assets and APIs, validates limits, and never falls through', a
   const page = await html.text()
   expect(page).toContain('Recently archived')
   expect(page).toContain('Recently promoted')
+  for (const path of [
+    '/current',
+    '/inbox',
+    '/promotes',
+    '/archived',
+    '/track/4uLU6hMCjMI75M1A2tKUQC',
+  ]) {
+    const direct = await app.request(path)
+    expect(direct.status).toBe(200)
+    expect(await direct.text()).toBe(page)
+  }
+  expect((await app.request('/track/nope')).status).toBe(404)
   const js = await app.request('/app.js')
   expect(js.headers.get('content-type')).toContain('text/javascript')
   expect(js.headers.get('cache-control')).toBe('no-store')
@@ -107,6 +129,9 @@ test('dashboard renders the four sections as an ARIA tab set wired to the render
     inbox: async () => inbox,
     archived: async () => archived,
     promotes: async () => promotes,
+    track: async () => {
+      throw new Error('unused')
+    },
   })
   const page = await (await app.request('/')).text()
   expect(page).toContain('role="tablist"')
@@ -140,6 +165,9 @@ test('loader errors return JSON with the shared normalization', async () => {
       throw 'cannot find playlist'
     },
     promotes: async () => promotes,
+    track: async () => {
+      throw new Error('unused')
+    },
   })
   const failure = await app.request('/api/current')
   expect(failure.status).toBe(500)

@@ -11,6 +11,7 @@ import { currentPlan, gatherCurrent } from './web/current'
 import { gatherInbox } from './web/inbox'
 import { gatherArchived } from './web/archived'
 import { gatherPromotes } from './web/promotes'
+import { gatherTrack } from './web/track'
 
 const web = buildWebApp({
   current: async () =>
@@ -21,6 +22,7 @@ const web = buildWebApp({
   // the extra DynamoDB round-trips or the staleness.
   archived: async (limit) => gatherArchived(await koalemosContext(), limit),
   promotes: async () => gatherPromotes(await koalemosContext(), 20),
+  track: async (id) => gatherTrack(await koalemosContext(), id),
 })
 
 /** Use the original event for HTTP identity, path and action query presence. */
@@ -45,7 +47,9 @@ export function shouldRouteToWeb(request: Request): boolean {
   return (
     path === '/app.js' ||
     path.startsWith('/api/') ||
-    (path === '/' && !hasAction)
+    (!hasAction &&
+      (['/', '/current', '/inbox', '/promotes', '/archived'].includes(path) ||
+        /^\/track\/[0-9A-Za-z]{22}$/.test(path)))
   )
 }
 

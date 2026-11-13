@@ -42,10 +42,12 @@ a `role="tablist"` of four `<button role="tab">`s over four
 attribute on the tab's `aria-controls` target and drives a roving `tabindex`
 with arrow/Home/End keys (automatic activation).
 
-**The active tab is the URL hash** (`#current`/`#inbox`/`#promotes`/`#archived`),
+**The active tab is the URL path** (`/current`/`/inbox`/`/promotes`/`/archived`),
 so it survives reload and is deep-linkable; an unknown/absent hash falls back to
-Current. Clicks and arrow keys set `location.hash`, and a single `hashchange`
-handler (`syncFromHash`) does the show **and** the load. **Feeds load lazily,
+Current. Clicks and arrow keys use `history.pushState`, and `syncFromPath`
+does the show **and** the load; `popstate` restores Back/Forward navigation.
+The server serves the dashboard HTML at each view path for direct links and reloads.
+Recognized legacy hash bookmarks are upgraded with `replaceState`. **Feeds load lazily,
 per tab** — a tab fetches only when first shown, not up-front. Loads are
 serialized through one promise chain (the Lambda is concurrency-1) and a feed
 already in flight is not enqueued twice. Each feed is cached after its first
@@ -100,6 +102,19 @@ the `play_count`/liked lookups. `gatherInbox` reuses `archived.ts`'s double-plan
 trick: plan once to learn the ≤20 ids, then fetch records + saved status for
 exactly those (one `containsMySavedTracks` call, under the 50-id cap) and re-plan.
 No cache — Inbox is fetched fresh like Current.
+
+**Track detail** (`/track/<22-char id>`, `src/web/track.ts`, `GET /api/track/:id`)
+is a full view, not a tab: `syncFromPath` sets `body[data-view='track']`, which
+hides the stats/tabs and shows `#track-view`. Track names in every feed link
+here; the `↗` beside them goes to Spotify. It loads through the same serialized
+chain and is cached per id until Refresh. The pure `trackPlan` derives events
+from `triage_actions` (a lone `'upvote'` = Unheard → Liked; one sharing a
+`'promote'`'s `action_at` is promote bookkeeping), fills gaps from live Inbox/
+Current `added_at`, and checks only the **one** archive named from the latest
+promote date (no crawl). A `status: 'removed'` drop that live playlists
+contradict gets `standing: 'contradicted'` — listed, never charted. No
+individual listens are shown, only counts. The swimlane is hand-built SVG in
+`app.js` (`renderSwimlane`), re-rendered on resize.
 
 The `/api/promotes` feed (`src/web/promotes.ts`) lists the 20 most recent
 **promotion events**, sourced **directly from Spotify's `added_at` timestamps**

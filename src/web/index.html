@@ -346,6 +346,221 @@
           flex-direction: column;
         }
       }
+      /* Track detail view (/track/<id>) */
+      body[data-view='track'] .dash,
+      body[data-view='track'] .panel[role='tabpanel'] {
+        display: none;
+      }
+      body:not([data-view='track']) .track-panel {
+        display: none;
+      }
+      .title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .song a.out {
+        color: #76877b;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .back {
+        display: inline-block;
+        color: #a1b0a6;
+        text-decoration: none;
+        font-size: 14px;
+        margin: 6px 0 22px;
+      }
+      .back:hover {
+        color: #1ed760;
+      }
+      .track-head {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        margin-bottom: 26px;
+      }
+      .cover {
+        width: 120px;
+        height: 120px;
+        border-radius: 10px;
+        object-fit: cover;
+        background: #223026;
+        flex: 0 0 auto;
+      }
+      .track-meta h2 {
+        font-size: clamp(26px, 4vw, 40px);
+        letter-spacing: -0.04em;
+        margin: 10px 0 6px;
+        overflow-wrap: anywhere;
+      }
+      .track-meta .artist {
+        font-size: 14px;
+      }
+      .spotify {
+        display: inline-block;
+        margin-top: 10px;
+        color: #70dc95;
+        font-size: 13px;
+        text-decoration: none;
+      }
+      .note {
+        font-size: 12px;
+        color: #ffcf8a;
+        margin-top: 8px;
+      }
+      .chip {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #24362a;
+        color: var(--stage, #a1b0a6);
+        border: 1px solid currentColor;
+      }
+      .stage-unheard {
+        --stage: #8b9bff;
+      }
+      .stage-liked {
+        --stage: #f07ab8;
+      }
+      .stage-current {
+        --stage: #1ed760;
+      }
+      .stage-archived {
+        --stage: #e7b84f;
+      }
+      .stage-removed {
+        --stage: #ff7a6b;
+      }
+      .track-stats {
+        grid-template-columns: repeat(4, 1fr);
+        margin: 0 0 14px;
+      }
+      .seen {
+        font-size: 12px;
+        margin-bottom: 34px;
+      }
+      .swimlane {
+        border: 1px solid #2a352e;
+        border-radius: 14px;
+        background: #151c17aa;
+        padding: 12px 6px 4px;
+        overflow: hidden;
+      }
+      .swimlane svg {
+        display: block;
+        font-family: inherit;
+      }
+      .lane {
+        fill: transparent;
+      }
+      .lane.alt {
+        fill: #ffffff06;
+      }
+      .lane-label {
+        fill: #5b6b60;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .lane-label.on {
+        fill: #c9d4cc;
+      }
+      .grid {
+        stroke: #ffffff0d;
+      }
+      .tick {
+        fill: #84968a;
+        font-size: 11px;
+      }
+      .seg {
+        fill: var(--stage);
+        opacity: 0.85;
+      }
+      .seg.open {
+        opacity: 1;
+        filter: drop-shadow(0 0 5px var(--stage));
+      }
+      .dwell {
+        fill: #91a098;
+        font-size: 10px;
+      }
+      .elbow {
+        stroke: #4f5f54;
+        stroke-width: 2;
+        stroke-dasharray: 3 3;
+        fill: none;
+      }
+      .event {
+        fill: var(--stage);
+        stroke: #101412;
+        stroke-width: 2;
+      }
+      .event.hollow {
+        fill: #101412;
+        stroke: var(--stage);
+      }
+      .event.contradicted {
+        opacity: 0.35;
+        stroke-dasharray: 2 2;
+      }
+      .row.contradicted {
+        opacity: 0.55;
+      }
+      .now {
+        stroke: #f2f5f3;
+        stroke-opacity: 0.35;
+        stroke-dasharray: 2 4;
+      }
+      .archive-by {
+        stroke: #e7b84f;
+        stroke-width: 2;
+        stroke-dasharray: 3 2;
+      }
+      .marker-label {
+        fill: #a1b0a6;
+        font-size: 10px;
+      }
+      .legend {
+        font-size: 12px;
+        margin: 10px 0 34px;
+      }
+      .event-row {
+        grid-template-columns: 14px minmax(0, 1fr) 190px 130px;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--stage);
+        border: 2px solid var(--stage);
+      }
+      .dot.hollow {
+        background: transparent;
+      }
+      .event-label {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      @media (max-width: 650px) {
+        .track-head {
+          gap: 16px;
+          align-items: flex-start;
+        }
+        .cover {
+          width: 84px;
+          height: 84px;
+        }
+        .track-stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .event-row {
+          grid-template-columns: 12px minmax(0, 1fr) 110px;
+        }
+      }
     </style>
     <script src="/app.js" defer></script>
   </head>
@@ -364,7 +579,7 @@
           <div id="updated" aria-live="polite"></div>
         </div>
       </header>
-      <div class="stats" aria-label="Current playlist summary">
+      <div class="stats dash" aria-label="Current playlist summary">
         <div class="stat">
           <span class="label">IN CURRENT</span><strong id="total">—</strong
           ><small>Tracks in your rotation</small>
@@ -378,7 +593,7 @@
           ><small id="age">Current plays or time in rotation</small>
         </div>
       </div>
-      <div class="tabs" role="tablist" aria-label="Listening sections">
+      <div class="tabs dash" role="tablist" aria-label="Listening sections">
         <button
           class="tab"
           type="button"
@@ -494,6 +709,10 @@
         <div class="list" id="archived" aria-live="polite">
           <p class="message">Reading the latest monthly archives…</p>
         </div>
+      </section>
+      <section class="track-panel" aria-labelledby="track-back">
+        <a class="back" id="track-back" href="/current">← Back</a>
+        <div id="track-view" aria-live="polite"></div>
       </section>
       <footer>
         <span>Just a view of your music. Manage your playlists in Spotify.</span
