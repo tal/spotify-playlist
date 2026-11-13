@@ -4,10 +4,25 @@ declare interface TrackSeenContext {
   exactness: 'played' | 'playlist-addition'
 }
 
+/** Key of the `action_history` row that performed a triage action. */
+declare type ActionHistoryRef = {
+  /** Unprefixed action id, e.g. `archive:2026-11` (no `<user>:` prefix). */
+  id: string
+  created_at: number
+}
+
 declare type TrackTriageAction = {
-  action_type: 'inboxed' | 'upvote' | 'promote' | 'remove'
+  /**
+   * `'archive'` = moved from Current into a monthly archive by `ArchiveAction`
+   * (written since 2026-11-13; older archives are only in `action_history`).
+   * Status-neutral: an archived track stays `'promoted'`.
+   */
+  action_type: 'inboxed' | 'upvote' | 'promote' | 'remove' | 'archive'
   action_at: number
+  /** For `'archive'`: the archive playlist the track was moved into. */
   context_playlist_id?: string
+  /** For `'archive'`: the `action_history` row of the run that moved it. */
+  action_ref?: ActionHistoryRef
 }
 
 declare type TrackTriageActionType = TrackTriageAction['action_type']

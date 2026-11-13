@@ -135,6 +135,29 @@ export class Dynamo {
     }
   }
 
+  /**
+   * Every `action_history` row stored under one id, oldest first. Unlike
+   * `getActionHistory` (a 1-row throttle probe) this pages through all of
+   * them — e.g. every `archive:<YYYY-MM>` run in a month.
+   */
+  async allActionHistory(id: string) {
+    const items: ActionHistoryItemData[] = []
+    let ExclusiveStartKey: Record<string, any> | undefined
+    do {
+      const resp = await AWS.docs.send(
+        new QueryCommand({
+          TableName: 'action_history',
+          KeyConditionExpression: 'id = :id',
+          ExpressionAttributeValues: { ':id': this.gId(id) },
+          ExclusiveStartKey,
+        }),
+      )
+      items.push(...((resp.Items ?? []) as ActionHistoryItemData[]))
+      ExclusiveStartKey = resp.LastEvaluatedKey
+    } while (ExclusiveStartKey)
+    return items
+  }
+
   async getRecentActionsOfType(actionType: string, since: number, limit: number = 10) {
     // Use Scan with filter since we can't query by partial partition key
     
@@ -957,6 +980,9 @@ const STATUS_BY_TRIAGE_ACTION: Record<
   // promote, after the conditional 'promote' entry — mapping it to a state
   // would clobber 'promoted' on every promotion to Current.
   upvote: null,
+  // Status-neutral: archiving files a track away, it is not a lifecycle change
+  // (an archived track stays 'promoted').
+  archive: null,
 }
 
 /**

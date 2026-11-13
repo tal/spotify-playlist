@@ -2,6 +2,7 @@ import { Action, PerformContext } from './action'
 import { PlaylistID, Spotify, TrackForMove } from '../spotify'
 import { MoveTrackMutation } from '../mutations/move-track-mutation'
 import { SetTrackStatusMutation } from '../mutations/set-track-status-mutation'
+import { TriageActionMutation } from '../mutations/triage-action-mutation'
 import { Settings } from '../settings'
 import { Mutation } from '../mutations/mutation'
 import { Dynamo, DYNAMO_WRITE_CHUNK, TrackStatusRow } from '../db/dynamo'
@@ -123,6 +124,8 @@ export type InboxEvidence =
 export interface ArchiveSnapshot {
   now: number
   changed_at: number
+  /** This run's `action_history` key, stamped on each archived track's log. */
+  actionRef: ActionHistoryRef
   timeToArchive: number
   playsToArchive: number
   archiveNamer: Settings['archivePlaylistNameFor']
@@ -192,14 +195,18 @@ function archiveAgedTracks({
   playsToArchive,
   archiveNamer,
   current,
-}: ArchiveSnapshot): MoveTrackMutation[] {
+  actionRef,
+}: ArchiveSnapshot): {
+  moves: MoveTrackMutation[]
+  logs: TriageActionMutation[]
+} {
   // A missing Current means nothing to archive, which is not a reason to take
   // the status reconciliation down with it.
   if (current.listing === 'unavailable') {
     console.log(
       `[ArchiveAction] no "${current.name}" playlist — nothing to archive`,
     )
-    return []
+    return { moves: [], logs: [] }
   }
 
   console.log(
@@ -219,6 +226,7 @@ function archiveAgedTracks({
   )
 
   const mutations: MoveTrackMutation[] = []
+  const logs: TriageActionMutation[] = []
 
   for (let [targetPlaylistName, archivedTracks] of byArchiveName) {
     const targetPlaylist = current.archivePlaylists.get(targetPlaylistName)
@@ -239,9 +247,24 @@ function archiveAgedTracks({
         to: targetPlaylist,
       }),
     )
+    // The track row's own record of the archive, pointing back at this run's
+    // action_history row (which holds the move itself).
+    for (const track of archivedTracks) {
+      // Candidates are keyed by id upstream, but TrackForMove types it optional.
+      if (!track.id) continue
+      logs.push(
+        new TriageActionMutation({
+          track: { id: track.id },
+          actionType: 'archive',
+          action_at: actionRef.created_at,
+          context_playlist_id: targetPlaylist.id,
+          action_ref: actionRef,
+        }),
+      )
+    }
   }
 
-  return mutations
+  return { moves: mutations, logs }
 }
 
 function inboxRowsGone(rows: TrackStatusRow[], inbox: InboxEvidence) {
@@ -323,14 +346,20 @@ function reconcileTrackStatus({
 }
 
 export function archivePlan(snapshot: ArchiveSnapshot): Mutation<any>[][] {
-  const archiveMutations = archiveAgedTracks(snapshot)
+  const { moves, logs } = archiveAgedTracks(snapshot)
   const statusMutations = reconcileTrackStatus(snapshot)
 
   // The sweep can touch an unbounded number of rows and every set runs as one
   // Promise.all, so it goes out in chunks rather than as a single fan-out that
   // throttles itself. Archive moves stay in one set — they are few and each
   // one is already a batched playlist call.
-  return [archiveMutations, ...chunkArray(statusMutations, DYNAMO_WRITE_CHUNK)]
+  // Logs go in their own sets *after* the moves, so a failed move (which
+  // aborts the action) never leaves a track row claiming an archive.
+  return [
+    moves,
+    ...chunkArray(logs, DYNAMO_WRITE_CHUNK),
+    ...chunkArray(statusMutations, DYNAMO_WRITE_CHUNK),
+  ]
 }
 
 /**
@@ -546,6 +575,7 @@ export class ArchiveAction implements Action {
     return {
       now,
       changed_at: this.created_at,
+      actionRef: { id: await this.getID(), created_at: this.created_at },
       timeToArchive,
       playsToArchive,
       archiveNamer: archivePlaylistNameFor,

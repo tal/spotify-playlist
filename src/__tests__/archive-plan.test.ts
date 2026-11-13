@@ -104,6 +104,7 @@ function snapshot(overrides: Partial<ArchiveSnapshot> = {}): ArchiveSnapshot {
   return {
     now: NOW,
     changed_at: CHANGED_AT,
+    actionRef: { id: 'archive:2026-07', created_at: NOW },
     timeToArchive: TIME_TO_ARCHIVE,
     playsToArchive: PLAYS_TO_ARCHIVE,
     archiveNamer,
@@ -148,6 +149,17 @@ describe('archivePlan age boundary', () => {
           tracks: [{ uri: 'spotify:track:just-over', id: 'just-over' }],
           from: { id: 'playlist-current' },
           to: { id: `playlist-${archiveNamer(track)}` },
+        },
+      },
+      {
+        type: 'mutation',
+        mutationType: 'triage-action',
+        data: {
+          track: { id: 'just-over' },
+          actionType: 'archive',
+          action_at: NOW,
+          context_playlist_id: `playlist-${archiveNamer(track)}`,
+          action_ref: { id: 'archive:2026-07', created_at: NOW },
         },
       },
     ])
@@ -615,7 +627,7 @@ describe('archivePlan write chunking', () => {
     ])
   })
 
-  it('keeps archive moves in one set ahead of the status writes', () => {
+  it('keeps archive moves in one set, then the archive log, then status writes', () => {
     const track = candidate('old', NOW - TIME_TO_ARCHIVE - DAY)
 
     const plan = archivePlan(
@@ -628,6 +640,8 @@ describe('archivePlan write chunking', () => {
 
     expect(plan.map((set) => set.map((m) => m.storage.mutationType))).toEqual([
       ['move-track'],
+      // After the move set, so a failed move (abort-action) never logs an archive.
+      ['triage-action'],
       Array(DYNAMO_WRITE_CHUNK).fill('set-track-status'),
       ['set-track-status'],
     ])

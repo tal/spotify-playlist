@@ -111,7 +111,11 @@ chain and is cached per id until Refresh. The pure `trackPlan` derives events
 from `triage_actions` (a lone `'upvote'` = Unheard → Liked; one sharing a
 `'promote'`'s `action_at` is promote bookkeeping), fills gaps from live Inbox/
 Current `added_at`, and checks only the **one** archive named from the latest
-promote date (no crawl). A `status: 'removed'` drop that live playlists
+promote date (no crawl) — **superseded 2026-11-13:** archive dates now come
+from the `'archive'` triage log entry, else the `archive:<YYYY-MM>`
+`action_history` rows (run month ≠ archive month, so every run month since the
+first promote is queried), and only then that one playlist's `added_at`. A
+`status: 'removed'` drop that live playlists
 contradict gets `standing: 'contradicted'` — listed, never charted. No
 individual listens are shown, only counts. The swimlane is hand-built SVG in
 `app.js` (`renderSwimlane`), re-rendered on resize.
@@ -470,6 +474,10 @@ Current `ProcessManualTriage` is narrower than this desired invariant:
 - Manual Inbox → Current is usually detected, but Current → Inbox and
   re-entry after removal can be missed because the historical action already
   exists. Treat these as implementation gaps, not desired behavior.
+- Since 2026-11-13 `ArchiveAction` logs an `'archive'` triage action per moved
+  track (status-neutral) with `context_playlist_id` and `action_ref` = the run's
+  `action_history` key `{ id: 'archive:<YYYY-MM>', created_at }`, in sets after
+  the move. Older archives exist only in those history rows.
 - `ArchiveAction` currently reconciles an `'inbox'` row against Inbox membership
   and a `'promoted'` row against liked status. Absence from Current alone is not
   removal because archived and Starred tracks legitimately leave Current.

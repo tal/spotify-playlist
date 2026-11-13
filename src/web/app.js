@@ -321,7 +321,11 @@ const EVENT_LABELS = {
   removed: 'Demoted',
   dropped: 'Dropped from triage',
 }
+// Sources written by our own actions (filled dots) vs. inferred from live
+// Spotify state (hollow dots).
+const RECORDED = new Set(['triage-log', 'action-history'])
 const SOURCE_LABELS = {
+  'action-history': 'archive run history',
   'triage-log': 'triage log',
   playlist: 'playlist added_at',
   status: 'status reconciliation',
@@ -478,7 +482,7 @@ function renderTrack(detail) {
   fragment.append(chart)
   const legend = element('p', 'description legend')
   legend.textContent =
-    'Filled dots come from the triage log; hollow dots are inferred from playlist added_at or status reconciliation. Faded dots are stored claims that live playlists contradict.'
+    'Filled dots come from our own records (triage log, archive run history); hollow dots are inferred from playlist added_at or status reconciliation. Faded dots are stored claims that live playlists contradict.'
   fragment.append(legend)
 
   const listHead = element('div', 'section-head')
@@ -495,7 +499,7 @@ function renderTrack(detail) {
     row.append(
       element(
         'span',
-        `dot stage-${event.stage}${event.source === 'triage-log' ? '' : ' hollow'}`,
+        `dot stage-${event.stage}${RECORDED.has(event.source) ? '' : ' hollow'}`,
       ),
     )
     const what = element('div', 'song-text')
@@ -718,7 +722,7 @@ function renderSwimlane(detail) {
       cx: x(Date.parse(event.at)),
       cy: y(event.stage),
       r: 6,
-      class: `event stage-${event.stage}${event.source === 'triage-log' ? '' : ' hollow'}${event.standing === 'contradicted' ? ' contradicted' : ''}`,
+      class: `event stage-${event.stage}${RECORDED.has(event.source) ? '' : ' hollow'}${event.standing === 'contradicted' ? ' contradicted' : ''}`,
     })
     dot.append(
       svgEl(

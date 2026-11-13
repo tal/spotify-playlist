@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test'
 import { buildWebApp } from '../web/app'
-import { isTrackId, trackPlan, type TrackSnapshot } from '../web/track'
+import {
+  archiveMovesFor,
+  archiveRunMonths,
+  isTrackId,
+  trackPlan,
+  type TrackSnapshot,
+} from '../web/track'
 
 const DAY = 86_400_000
 const t = (day: number) => Date.UTC(2026, 7, 1) + day * DAY
@@ -21,7 +27,8 @@ function snapshot(overrides: Partial<TrackSnapshot> = {}): TrackSnapshot {
     record: undefined,
     inbox: null,
     current: null,
-    archive: null,
+    archives: [],
+    playlistNames: {},
     saved: 'unsaved',
     now: t(60),
     timeToArchive: 45 * DAY,
@@ -56,7 +63,9 @@ test('full journey: inboxed → liked → promoted → archived, with dwell segm
         { action_type: 'promote', action_at: t(5) },
         { action_type: 'upvote', action_at: t(5) },
       ]),
-      archive: { playlist: '2026 - August', addedAt: iso(t(30)) },
+      archives: [
+        { playlist: '2026 - August', at: iso(t(30)), source: 'action-history' },
+      ],
       saved: 'saved',
     }),
   )
@@ -219,4 +228,130 @@ test('/api/track/:id validates the id and calls the loader', async () => {
   expect(ok.status).toBe(200)
   expect((await ok.json()).track.id).toBe(ID)
   expect(seen).toEqual([ID])
+})
+
+test('archiveMovesFor reads stored move-track mutations, dated by the run', () => {
+  const move = (ids: string[], to: string) => ({
+    type: 'mutation',
+    mutationType: 'move-track',
+    data: {
+      tracks: ids.map((id) => ({ id, uri: `spotify:track:${id}` })),
+      from: { id: 'current' },
+      to: { id: to },
+    },
+  })
+  const rows = [
+    { created_at: t(40), mutations: [move(['other'], 'oct')] },
+    {
+      created_at: t(30),
+      mutations: [
+        move(['x', ID], 'aug'),
+        {
+          type: 'mutation',
+          mutationType: 'set-track-status',
+          data: { id: ID },
+        },
+      ],
+    },
+    { created_at: t(50), mutations: [] },
+    { created_at: t(55) },
+    { created_at: t(20), mutations: [move([ID], 'jul')] },
+  ]
+  expect(archiveMovesFor(rows, ID)).toEqual([
+    { at: t(20), playlistId: 'jul' },
+    { at: t(30), playlistId: 'aug' },
+  ])
+  expect(archiveMovesFor(rows, 'missing')).toEqual([])
+})
+
+test('archiveRunMonths spans every run month inclusive, across a year end', () => {
+  const at = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d).getTime()
+  expect(archiveRunMonths(at(2026, 11, 28), at(2027, 2, 3))).toEqual([
+    '2026-11',
+    '2026-12',
+    '2027-01',
+    '2027-02',
+  ])
+  expect(archiveRunMonths(at(2026, 9, 1), at(2026, 9, 30))).toEqual(['2026-09'])
+})
+
+test('a history archive marks the track archived and is a recorded (filled) event', () => {
+  const plan = trackPlan(
+    snapshot({
+      record: record([{ action_type: 'promote', action_at: t(5) }]),
+      archives: [
+        { playlist: '2026 - August', at: iso(t(20)), source: 'action-history' },
+      ],
+    }),
+  )
+  expect(plan.stage).toBe('archived')
+  expect(plan.events.at(-1)).toMatchObject({
+    kind: 'archived',
+    source: 'action-history',
+    playlist: '2026 - August',
+  })
+  expect(plan.segments).toEqual([
+    { stage: 'current', start: iso(t(5)), end: iso(t(20)) },
+    { stage: 'archived', start: iso(t(20)), end: null },
+  ])
+})
+
+test('an archive log entry (with action_ref) wins over the same run in history', () => {
+  const plan = trackPlan(
+    snapshot({
+      record: record([
+        { action_type: 'promote', action_at: t(5) },
+        {
+          action_type: 'archive',
+          action_at: t(20),
+          context_playlist_id: 'pl-aug',
+          action_ref: { id: 'archive:2026-08', created_at: t(20) },
+        },
+      ]),
+      archives: [
+        { playlist: '2026 - August', at: iso(t(20)), source: 'action-history' },
+      ],
+      playlistNames: { 'pl-aug': '2026 - August' },
+    }),
+  )
+  const archived = plan.events.filter((e) => e.kind === 'archived')
+  expect(archived).toEqual([
+    {
+      kind: 'archived',
+      at: iso(t(20)),
+      stage: 'archived',
+      source: 'triage-log',
+      standing: 'consistent',
+      playlist: '2026 - August',
+    },
+  ])
+  expect(plan.stage).toBe('archived')
+})
+
+test('a lone upvote after a promote is not a step back to Liked', () => {
+  const plan = trackPlan(
+    snapshot({
+      record: record([
+        { action_type: 'inboxed', action_at: t(0) },
+        { action_type: 'upvote', action_at: t(2) },
+        { action_type: 'promote', action_at: t(4) },
+        { action_type: 'upvote', action_at: t(4) },
+        // Re-promoting while already in Current logs only an upvote.
+        { action_type: 'upvote', action_at: t(9) },
+      ]),
+      current: { addedAt: iso(t(4)) },
+      saved: 'saved',
+    }),
+  )
+  expect(plan.events.map((e) => e.kind)).toEqual([
+    'inboxed',
+    'liked',
+    'promoted',
+  ])
+  expect(plan.segments.map((s) => s.stage)).toEqual([
+    'unheard',
+    'liked',
+    'current',
+  ])
 })

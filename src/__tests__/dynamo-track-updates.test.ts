@@ -47,6 +47,12 @@ describe('statusForTriageActions', () => {
     ).toBeUndefined()
   })
 
+  it('keeps archive status-neutral, so an archived track stays promoted', () => {
+    expect(
+      statusForTriageActions([{ action_type: 'archive', action_at: 42 }]),
+    ).toBeUndefined()
+  })
+
   it('uses the last status-bearing action rather than a trailing upvote', () => {
     expect(
       statusForTriageActions([

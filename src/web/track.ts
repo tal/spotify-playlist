@@ -1,6 +1,7 @@
 import type { PerformContext } from '../actions/action'
 import { albumArt } from '../album-art'
 import { DAY_MS } from '../settings'
+import { archivePeriod } from '../actions/archive-action'
 
 /**
  * A lane on the track-detail swimlane: the user-facing triage progression
@@ -10,7 +11,19 @@ export type TrackStage =
   'unheard' | 'liked' | 'current' | 'archived' | 'removed'
 
 /** Where the event's evidence came from, so the UI can say how sure it is. */
-export type EventSource = 'triage-log' | 'playlist' | 'status'
+export type EventSource =
+  'triage-log' | 'action-history' | 'playlist' | 'status'
+
+/**
+ * One archiving of the track. `action-history` = an `ArchiveAction` run's
+ * stored `move-track` mutation (the run's `created_at`); `playlist` = the
+ * archive playlist's `added_at`, the fallback for hand-filed tracks.
+ */
+export type ArchiveEvidence = {
+  playlist: string
+  at: string
+  source: 'action-history' | 'playlist'
+}
 
 export type TrackEventKind =
   'inboxed' | 'liked' | 'promoted' | 'archived' | 'removed' | 'dropped'
@@ -57,7 +70,9 @@ export type TrackSnapshot = {
   record: TrackItem | undefined
   inbox: PlaylistPresence
   current: PlaylistPresence
-  archive: { playlist: string; addedAt: string } | null
+  archives: ArchiveEvidence[]
+  /** Spotify playlist id → name, for `'archive'` log entries. */
+  playlistNames: Record<string, string>
   saved: 'saved' | 'unsaved'
   now: number
   timeToArchive: number
@@ -109,8 +124,14 @@ export function trackEvents(snapshot: TrackSnapshot): TrackEvent[] {
           standing: 'consistent',
         })
         break
-      case 'upvote':
-        if (!promoteTimes.has(action.action_at))
+      case 'upvote': {
+        // A lone upvote is the Unheard → Liked step only while the track is
+        // still before Liked. Promoting a track already in Current changes no
+        // membership, so promotePlan logs just the upvote — not a step back.
+        const before = events.at(-1)?.stage
+        const advances =
+          before === undefined || before === 'unheard' || before === 'removed'
+        if (advances && !promoteTimes.has(action.action_at))
           events.push({
             kind: 'liked',
             at,
@@ -118,6 +139,23 @@ export function trackEvents(snapshot: TrackSnapshot): TrackEvent[] {
             source: 'triage-log',
             standing: 'consistent',
           })
+        break
+      }
+      case 'archive':
+        events.push({
+          kind: 'archived',
+          at,
+          stage: 'archived',
+          source: 'triage-log',
+          standing: 'consistent',
+          ...(action.context_playlist_id
+            ? {
+                playlist:
+                  snapshot.playlistNames[action.context_playlist_id] ??
+                  action.context_playlist_id,
+              }
+            : {}),
+        })
         break
       case 'remove':
         events.push({
@@ -136,7 +174,7 @@ export function trackEvents(snapshot: TrackSnapshot): TrackEvent[] {
 
   // Live membership the log hasn't caught up with yet. Only add it when the
   // log's latest matching event predates the playlist addition.
-  const { current, inbox, archive } = snapshot
+  const { current, inbox, archives } = snapshot
   if (current) {
     const logged = latestOf('promoted')
     if (!logged || Date.parse(logged.at) < Date.parse(current.addedAt) - 60_000)
@@ -159,15 +197,24 @@ export function trackEvents(snapshot: TrackSnapshot): TrackEvent[] {
         standing: 'consistent',
       })
   }
-  if (archive)
+  // History/playlist evidence for an archive the log already has is the same
+  // archive — the log entry carries the run's created_at as its action_at.
+  const loggedArchives = events
+    .filter((e) => e.kind === 'archived')
+    .map((e) => Date.parse(e.at))
+  for (const archive of archives) {
+    const at = Date.parse(archive.at)
+    if (loggedArchives.some((logged) => Math.abs(logged - at) < 60_000))
+      continue
     events.push({
       kind: 'archived',
-      at: archive.addedAt,
+      at: archive.at,
       stage: 'archived',
-      source: 'playlist',
+      source: archive.source,
       standing: 'consistent',
       playlist: archive.playlist,
     })
+  }
 
   const record = snapshot.record
   if (record?.status === 'removed' && record.status_changed_at) {
@@ -192,7 +239,7 @@ export function trackEvents(snapshot: TrackSnapshot): TrackEvent[] {
 function liveStage(snapshot: TrackSnapshot): TrackStage | null {
   if (snapshot.current) return 'current'
   if (snapshot.inbox) return snapshot.saved === 'saved' ? 'liked' : 'unheard'
-  if (snapshot.archive) return 'archived'
+  if (snapshot.archives.length) return 'archived'
   return null
 }
 
@@ -304,11 +351,128 @@ function cover(images?: Array<{ url: string; width?: number | null }>) {
   return sized[0].url
 }
 
+/** A `move-track` mutation as `ArchiveAction.forStorage()` stores it. */
+type StoredMove = {
+  mutationType?: string
+  data?: { tracks?: Array<{ id?: string }>; to?: { id?: string } }
+}
+
+/**
+ * The archive moves of one track found in `archive:<YYYY-MM>` history rows:
+ * each `move-track` mutation whose tracks include `trackId`, dated by the
+ * run's `created_at`. Pure, so the row shape is pinned by a test.
+ */
+export function archiveMovesFor(
+  rows: Array<{ created_at: number; mutations?: unknown[] }>,
+  trackId: string,
+) {
+  return rows
+    .flatMap((row) =>
+      ((row.mutations ?? []) as StoredMove[])
+        .filter(
+          (m) =>
+            m?.mutationType === 'move-track' &&
+            m.data?.tracks?.some((t) => t?.id === trackId) &&
+            m.data.to?.id,
+        )
+        .map((m) => ({ at: row.created_at, playlistId: m.data!.to!.id! })),
+    )
+    .filter((move) => Number.isFinite(move.at))
+    .sort((a, b) => a.at - b.at)
+}
+
+/**
+ * `archive:<YYYY-MM>` ids are keyed on the month the *run* happened (not the
+ * archive playlist's month), so every month from `from` through `to` must be
+ * read. Uses `archivePeriod` so the bucketing matches the writer exactly.
+ */
+export function archiveRunMonths(from: number, to: number) {
+  const months: string[] = []
+  const cursor = new Date(from)
+  cursor.setDate(1)
+  cursor.setHours(12, 0, 0, 0)
+  const last = archivePeriod(to)
+  for (let guard = 0; guard < 240; guard++) {
+    const month = archivePeriod(cursor.getTime())
+    months.push(month)
+    if (month >= last) break
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return months
+}
+
+/** Earliest moment the track could have entered Current. */
+function archiveSearchStart(record: TrackItem | undefined) {
+  const promotes = (record?.triage_actions ?? [])
+    .filter((a) => a.action_type === 'promote')
+    .map((a) => a.action_at)
+  if (promotes.length) return Math.min(...promotes)
+  return null
+}
+
+async function playlistNames(ctx: PerformContext) {
+  return Object.fromEntries(
+    (await ctx.client.allPlaylists()).map((p) => [p.id, p.name]),
+  ) as Record<string, string>
+}
+
+async function archivesFromHistory(
+  ctx: PerformContext,
+  id: string,
+  record: TrackItem | undefined,
+): Promise<ArchiveEvidence[]> {
+  const start = archiveSearchStart(record)
+  if (start === null) return []
+  const rows = (
+    await Promise.all(
+      archiveRunMonths(start, ctx.now).map((month) =>
+        ctx.dynamo.allActionHistory(`archive:${month}`),
+      ),
+    )
+  ).flat()
+  const moves = archiveMovesFor(rows, id)
+  if (!moves.length) return []
+  const names = await playlistNames(ctx)
+  return moves.map((move) => ({
+    playlist: names[move.playlistId] ?? move.playlistId,
+    at: iso(move.at),
+    source: 'action-history' as const,
+  }))
+}
+
+/**
+ * Archive history first. Only when it has nothing (a hand-filed track, or an
+ * archive from before the rows were kept) fall back to the one monthly archive
+ * the latest promote date names, dated by that playlist's `added_at`.
+ */
+async function archivesFor(
+  ctx: PerformContext,
+  id: string,
+  record: TrackItem | undefined,
+): Promise<ArchiveEvidence[]> {
+  const fromHistory = await archivesFromHistory(ctx, id, record)
+  if (fromHistory.length) return fromHistory
+  const lastPromote = (record?.triage_actions ?? [])
+    .filter((a) => a.action_type === 'promote')
+    .sort((a, b) => a.action_at - b.action_at)
+    .at(-1)
+  if (!lastPromote) return []
+  const name = ctx.settings.archivePlaylistNameFor({
+    added_at: iso(lastPromote.action_at),
+  })
+  const playlist = await ctx.client.optionalPlaylist(name)
+  if (!playlist) return []
+  const hit = presence(await ctx.client.tracksForPlaylist(playlist), id)
+  return hit
+    ? [{ playlist: playlist.name, at: hit.addedAt, source: 'playlist' }]
+    : []
+}
+
 /**
  * Reads only existing state: the `track` row, the track's Spotify metadata and
- * saved status, the Inbox and Current playlists, and — when the track has been
- * promoted but is no longer in Current — the one monthly archive its promote
- * date points at. No archive crawl, no per-listen log.
+ * saved status, the Inbox and Current playlists, and the `archive:<YYYY-MM>`
+ * action-history rows from its first promote onward (falling back to the one
+ * monthly archive its promote date names). No archive crawl, no per-listen log.
  */
 export async function gatherTrack(ctx: PerformContext, id: string) {
   const [spotifyTrack, records, savedResult, inboxPlaylist, currentPlaylist] =
@@ -327,24 +491,10 @@ export async function gatherTrack(ctx: PerformContext, id: string) {
   const record = records[id]
   const current = presence(currentItems, id)
 
-  // ArchiveAction names the archive after the Current `added_at`, which the
-  // promote entry shares — so the latest promote points at the one archive to
-  // check. A hand-made archive addition to some other month isn't found.
-  let archive: TrackSnapshot['archive'] = null
-  const lastPromote = (record?.triage_actions ?? [])
-    .filter((a) => a.action_type === 'promote')
-    .sort((a, b) => a.action_at - b.action_at)
-    .at(-1)
-  if (!current && lastPromote) {
-    const name = ctx.settings.archivePlaylistNameFor({
-      added_at: iso(lastPromote.action_at),
-    })
-    const playlist = await ctx.client.optionalPlaylist(name)
-    if (playlist) {
-      const hit = presence(await ctx.client.tracksForPlaylist(playlist), id)
-      if (hit) archive = { playlist: playlist.name, addedAt: hit.addedAt }
-    }
-  }
+  const archives = current
+    ? // Still in Current: any earlier archiving is history, but keep it.
+      await archivesFromHistory(ctx, id, record)
+    : await archivesFor(ctx, id, record)
 
   return trackPlan({
     track: {
@@ -359,7 +509,12 @@ export async function gatherTrack(ctx: PerformContext, id: string) {
     record,
     inbox: presence(inboxItems, id),
     current,
-    archive,
+    archives,
+    playlistNames: (record?.triage_actions ?? []).some(
+      (a) => a.action_type === 'archive',
+    )
+      ? await playlistNames(ctx)
+      : {},
     saved: savedResult.saved.includes(id) ? 'saved' : 'unsaved',
     now: Date.now(),
     timeToArchive: ctx.settings.timeToArchive,
